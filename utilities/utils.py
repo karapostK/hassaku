@@ -66,3 +66,30 @@ def print_results(metrics):
 
     for metric_name, metric_value in metrics.items():
         print(STR_RESULT.format(metric_name, metric_value))
+
+
+
+def generate_slices(total_columns):
+    """
+    Generate slices that will be processed based on the number of cores
+    available on the machine.
+    """
+    from multiprocessing import cpu_count
+
+    cores = cpu_count()
+    print('Running on {} cores'.format(cores))
+    segment_length = total_columns // cores
+
+    ranges = []
+    now = 0
+
+    while now < total_columns:
+        end = now + segment_length
+
+        # The last part can be a little greater that others in some cases, but
+        # we can't generate more than #cores ranges
+        end = end if end + segment_length <= total_columns else total_columns
+        ranges.append((now, end))
+        now = end
+
+    return ranges
