@@ -36,9 +36,12 @@ class SVDAlgorithm(RecommenderAlgorithm):
         return out
 
     def fit(self, matrix: sp.csr_matrix):
+        print('Starting Fitting')
         matrix = matrix.asfptype()  # casting to float
 
         u, s, vt = svds(matrix, k=self.factors)
 
         self.users_factors = u * s
         self.items_factors = vt.T
+        print('End Fitting')
+

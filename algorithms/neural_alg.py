@@ -35,7 +35,7 @@ class DeepMatrixFactorization(RecommenderAlgorithm):
 
         # Building the network for the user
         u_nn = []
-        for i, (n_in, n_out) in enumerate(zip(self.u_layers[:-1], self.u_layers[:1])):
+        for i, (n_in, n_out) in enumerate(zip(self.u_layers[:-1], self.u_layers[1:])):
             u_nn.append(nn.Linear(n_in, n_out))
 
             if i != len(self.u_layers) - 2:
@@ -44,7 +44,7 @@ class DeepMatrixFactorization(RecommenderAlgorithm):
 
         # Building the network for the item
         i_nn = []
-        for i, (n_in, n_out) in enumerate(zip(self.i_layers[:-1], self.i_layers[:1])):
+        for i, (n_in, n_out) in enumerate(zip(self.i_layers[:-1], self.i_layers[1:])):
             i_nn.append(nn.Linear(n_in, n_out))
 
             if i != len(self.i_layers) - 2:
@@ -55,20 +55,26 @@ class DeepMatrixFactorization(RecommenderAlgorithm):
 
         self.apply(general_weight_init)
 
+        self.name = 'DeepMatrixFactorization'
+
+        print('DeepMatrixFactorization class created')
+
     def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor, device: str = 'cpu'):
 
         # User pass
-        u_vec = self.sparse_to_device(self.matrix[u_idxs]).to(device)
+        u_vec = self.sparse_to_tensor(self.matrix[u_idxs])
+        u_vec = u_vec.to(device)
         u_vec = self.user_nn(u_vec)
 
         # Item pass
 
-        i_vec = self.sparse_to_device(self.matrix[:, i_idxs.flatten()]).T.to(device)
+        i_vec = self.sparse_to_tensor(self.matrix[:, i_idxs.flatten()]).T
+        i_vec = i_vec.to(device)
         i_vec = self.item_nn(i_vec)
         i_vec = i_vec.reshape(list(i_idxs.shape) + [-1])
 
         # Cosine
-        sim = self.cosine_fun(u_vec[:, None, :], i_vec)
+        sim = self.cosine_func(u_vec[:, None, :], i_vec)
 
         return sim
 
@@ -88,8 +94,8 @@ class DeepMatrixFactorization(RecommenderAlgorithm):
             epoch_train_loss = 0
 
             for u_idxs, i_idxs, labels in tqdm(train_loader):
-                u_idxs = u_idxs.to(device)
-                i_idxs = i_idxs.to(device)
+                u_idxs = u_idxs
+                i_idxs = i_idxs
                 labels = labels.to(device)
 
                 out = self(u_idxs, i_idxs, device)

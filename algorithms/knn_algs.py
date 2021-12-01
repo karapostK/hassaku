@@ -31,6 +31,7 @@ class UserKNN(RecommenderAlgorithm):
         :param k: number of k nearest neighbours to consider
         :param kwargs: additional parameters for the similarity function (e.g. alpha for asymmetric cosine)
         """
+        print('Starting Fitting')
         sim_fun = sim_mapping_to_func[self.sim_func_choice]
         if self.sim_func_choice == SimilarityFunction.asymmetric_cosine:
             sim_fun = partial(sim_fun, kwargs['alpha'])
@@ -41,8 +42,10 @@ class UserKNN(RecommenderAlgorithm):
 
         self.pred_mtx = sim_mtx @ matrix
         self.pred_mtx = self.pred_mtx.toarray()  # Not elegant but materializing the whole matrix makes the rest of the code easier to write/read
+        print('End Fitting')
 
     def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union:
+        assert self.pred_mtx is not None, 'Prediction Matrix not computed, run fit!'
         out = self.pred_mtx[u_idxs[:, None], i_idxs]
         return out
 
@@ -69,6 +72,7 @@ class ItemKNN(RecommenderAlgorithm):
         :param k: number of k nearest neighbours to consider
         :param kwargs: additional parameters for the similarity function (e.g. alpha for asymmetric cosine)
         """
+        print('Starting Fitting')
         sim_fun = sim_mapping_to_func[self.sim_func_choice]
         if self.sim_func_choice == SimilarityFunction.asymmetric_cosine:
             sim_fun = partial(sim_fun, kwargs['alpha'])
@@ -79,8 +83,10 @@ class ItemKNN(RecommenderAlgorithm):
 
         self.pred_mtx = matrix @ sim_mtx.T
         self.pred_mtx = self.pred_mtx.toarray()  # Not elegant but materializing the whole matrix makes the rest of the code easier to write/read
+        print('End Fitting')
 
     def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union:
+        assert self.pred_mtx is not None, 'Prediction Matrix not computed, run fit!'
         out = self.pred_mtx[u_idxs[:, None], i_idxs]
         return out
 
