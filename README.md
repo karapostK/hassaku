@@ -23,4 +23,5 @@ This repository contains some of the algorithms that have been proposed in the f
 | [Neural Collaborative Filtering](http://staff.ustc.edu.cn/~hexn/papers/www17-ncf.pdf) |  |  |
 | [iALS](http://yifanhu.net/PUB/cf.pdf) |  |  |
 | [eALS](https://dl.acm.org/doi/10.1145/2911451.2911489) |  |  |
+| [BPRMF](https://arxiv.org/ftp/arxiv/papers/1205/1205.2618.pdf) |  |  |
 
