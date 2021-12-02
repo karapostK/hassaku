@@ -26,4 +26,5 @@ This repository contains some of the algorithms that have been proposed in the f
 | [BPRMF](https://arxiv.org/ftp/arxiv/papers/1205/1205.2618.pdf) |  |  |
 | ProtoMF |  |  |
 | Anchor-based Collaborative Filtering |  |  |
+| [Probablistic Matrix Factorization](https://proceedings.neurips.cc/paper/2007/file/d7322ed717dedf1eb4e6e52a37ea7bcd-Paper.pdf) |  |  |
 
