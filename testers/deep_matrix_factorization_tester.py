@@ -53,7 +53,7 @@ def evaluate_rec_alg(rec_alg, test_loader):
 from algorithms.neural_alg import DeepMatrixFactorization
 from utilities.trainer import ExperimentConfig, Trainer
 
-dmf_alg = DeepMatrixFactorization(train_loader.dataset.csr_matrix, u_mid_layers=[1000], i_mid_layers=[1000],
+dmf_alg = DeepMatrixFactorization(train_loader.dataset.csr_matrix, u_mid_layers=[100], i_mid_layers=[100],
                                   final_dimension=64)
 conf = ExperimentConfig(lr=1e-4)
 trainer = Trainer(dmf_alg, train_loader, val_loader, conf)

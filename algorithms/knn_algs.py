@@ -12,20 +12,19 @@ from utilities.similarities import SimilarityFunction
 
 class KNNAlgorithm(RecommenderAlgorithm, ABC):
 
-    def __init__(self, sim_func_choice: SimilarityFunction = SimilarityFunction.cosine, k: int = 100, **kwargs):
+    def __init__(self, sim_func: SimilarityFunction = SimilarityFunction.cosine, k: int = 100, **kwargs):
         """
         Abstract class for K-nearest neighbours
-        :param sim_func_choice: similarity function to use
+        :param sim_func: similarity function to use
         :param k: number of k nearest neighbours to consider
         :param kwargs: additional parameters for the similarity function (e.g. alpha for asymmetric cosine)
         """
         super().__init__()
 
-        self.sim_func_choice = sim_func_choice
-        self.sim_func = self.sim_func_choice.value()
-        if self.sim_func_choice == SimilarityFunction.asymmetric_cosine:
+        self.sim_func = sim_func
+        if self.sim_func == SimilarityFunction.asymmetric_cosine:
             self.sim_func = partial(self.sim_func, kwargs['alpha'])
-        elif self.sim_func_choice == SimilarityFunction.tversky:
+        elif self.sim_func == SimilarityFunction.tversky:
             self.sim_func = partial(self.sim_func, kwargs['alpha'], kwargs['beta'])
 
         self.k = k
@@ -35,7 +34,7 @@ class KNNAlgorithm(RecommenderAlgorithm, ABC):
         self.name = 'KNNAlgorithm'
 
         print(f'Built {self.name} module \n'
-              f'- sim_func_choice: {self.sim_func_choice} \n'
+              f'- sim_func: {self.sim_func} \n'
               f'- k: {self.k} \n')
 
     @abstractmethod
@@ -53,8 +52,8 @@ class KNNAlgorithm(RecommenderAlgorithm, ABC):
 
 class UserKNN(KNNAlgorithm):
 
-    def __init__(self, sim_func_choice: SimilarityFunction = SimilarityFunction.cosine, k: int = 100, **kwargs):
-        super().__init__(sim_func_choice, k, **kwargs)
+    def __init__(self, sim_func: SimilarityFunction = SimilarityFunction.cosine, k: int = 100, **kwargs):
+        super().__init__(sim_func, k, **kwargs)
         self.name = 'UserKNN'
         print(f'Built {self.name} module \n')
 
@@ -73,8 +72,8 @@ class UserKNN(KNNAlgorithm):
 
 class ItemKNN(KNNAlgorithm):
 
-    def __init__(self, sim_func_choice: SimilarityFunction = SimilarityFunction.cosine, k: int = 100, **kwargs):
-        super().__init__(sim_func_choice, k, **kwargs)
+    def __init__(self, sim_func: SimilarityFunction = SimilarityFunction.cosine, k: int = 100, **kwargs):
+        super().__init__(sim_func, k, **kwargs)
         self.name = 'ItemKNN'
         print(f'Built {self.name} module \n')
 

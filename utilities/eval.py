@@ -1,7 +1,10 @@
 import bottleneck as bn
 import numpy as np
+from torch.utils.data import DataLoader
 
-from utilities.consts import K_VALUES
+from algorithms.base_classes import RecommenderAlgorithm
+from utilities.consts import K_VALUES, SINGLE_SEED
+from utilities.utils import reproducible, print_results
 
 
 def Hit_Ratio_at_k_batch(logits: np.ndarray, k=10, sum=True):
@@ -76,7 +79,8 @@ class Evaluator:
                                                                  metric(out, k)
                 else:
                     self.metrics_values[metric_name.format(k)] = self.metrics_values.get(metric_name.format(k),
-                                                                                         []) + list(metric(out, k, False))
+                                                                                         []) + list(
+                        metric(out, k, False))
 
     def get_results(self, aggregated=True):
         """
@@ -95,3 +99,17 @@ class Evaluator:
         self.metrics_values = {}
 
         return metrics_dict
+
+
+def evaluate_recommender_algorithm(alg: RecommenderAlgorithm, test_loader: DataLoader, seed: int = SINGLE_SEED):
+    reproducible(seed)
+
+    evaluator = Evaluator(test_loader.dataset.n_users)
+
+    for u_idxs, i_idxs, labels in test_loader:
+        out = alg.predict(u_idxs, i_idxs)
+
+        evaluator.eval_batch(out)
+
+    metrics_values = evaluator.get_results()
+    print_results(metrics_values)
