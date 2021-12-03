@@ -6,7 +6,7 @@ import torch
 from scipy import sparse as sp
 
 from base_classes import RecommenderAlgorithm
-from utilities.similarities import SimilarityFunction, sim_mapping_to_func
+from utilities.similarities import SimilarityFunction
 
 
 class UserKNN(RecommenderAlgorithm):
@@ -32,7 +32,7 @@ class UserKNN(RecommenderAlgorithm):
         :param kwargs: additional parameters for the similarity function (e.g. alpha for asymmetric cosine)
         """
         print('Starting Fitting')
-        sim_fun = sim_mapping_to_func[self.sim_func_choice]
+        sim_fun = self.sim_func_choice.value()
         if self.sim_func_choice == SimilarityFunction.asymmetric_cosine:
             sim_fun = partial(sim_fun, kwargs['alpha'])
         elif self.sim_func_choice == SimilarityFunction.tversky:
@@ -73,7 +73,7 @@ class ItemKNN(RecommenderAlgorithm):
         :param kwargs: additional parameters for the similarity function (e.g. alpha for asymmetric cosine)
         """
         print('Starting Fitting')
-        sim_fun = sim_mapping_to_func[self.sim_func_choice]
+        sim_fun = self.sim_func_choice.value()
         if self.sim_func_choice == SimilarityFunction.asymmetric_cosine:
             sim_fun = partial(sim_fun, kwargs['alpha'])
         elif self.sim_func_choice == SimilarityFunction.tversky:

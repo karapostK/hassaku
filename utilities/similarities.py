@@ -1,18 +1,9 @@
-from enum import Enum, auto
+from enum import Enum
 
 import numpy as np
 import scipy as sc
 from scipy import sparse as sp
 from scipy.sparse import linalg as sp_linalg
-
-
-class SimilarityFunction(Enum):
-    jaccard = auto()
-    cosine = auto()
-    pearson = auto()
-    asymmetric_cosine = auto()
-    tversky = auto()
-    sorensen_dice = auto()
 
 
 def compute_jaccard_sim_mtx(matrix):
@@ -102,11 +93,10 @@ def compute_tversky_sim_mtx(alpha, beta, matrix):
     return tversky_sim_mtx
 
 
-sim_mapping_to_func = {
-    SimilarityFunction.jaccard: compute_jaccard_sim_mtx,
-    SimilarityFunction.cosine: compute_cosine_sim_mtx,
-    SimilarityFunction.pearson: compute_pearson_sim_mtx,
-    SimilarityFunction.sorensen_dice: compute_sorensen_dice_sim_mtx,
-    SimilarityFunction.asymmetric_cosine: compute_asymmetric_cosine_sim_mtx,
-    SimilarityFunction.tversky: compute_tversky_sim_mtx
-}
+class SimilarityFunction(Enum):
+    jaccard = compute_jaccard_sim_mtx
+    cosine = compute_cosine_sim_mtx
+    pearson = compute_pearson_sim_mtx
+    asymmetric_cosine = compute_asymmetric_cosine_sim_mtx
+    tversky = compute_tversky_sim_mtx
+    sorensen_dice = compute_sorensen_dice_sim_mtx
