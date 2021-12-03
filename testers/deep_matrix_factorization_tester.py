@@ -2,14 +2,13 @@ import sys
 
 sys.path.append('../')
 sys.path.append('../algorithms')
-from algorithms.neural_alg import DeepMatrixFactorization
-from data.dataset import get_protorecdataset_dataloader
+from data.dataset import get_recdataset_dataloader
 from utilities.eval import Evaluator
 from utilities.utils import reproducible, print_results
 
 SEED = 1391075
 
-train_loader = get_protorecdataset_dataloader(
+train_loader = get_recdataset_dataloader(
     data_path='../data/lfm2b-1m',
     split_set='train',
     n_neg=10,
@@ -18,7 +17,7 @@ train_loader = get_protorecdataset_dataloader(
     shuffle=True,
     num_workers=8,
 )
-val_loader = get_protorecdataset_dataloader(
+val_loader = get_recdataset_dataloader(
     data_path='../data/lfm2b-1m',
     split_set='val',
     n_neg=99,
@@ -27,7 +26,7 @@ val_loader = get_protorecdataset_dataloader(
     num_workers=8,
 )
 
-test_loader = get_protorecdataset_dataloader(
+test_loader = get_recdataset_dataloader(
     data_path='../data/lfm2b-1m',
     split_set='test',
     n_neg=99,
@@ -51,6 +50,13 @@ def evaluate_rec_alg(rec_alg, test_loader):
     print_results(metrics_values)
 
 
-dmf_alg = DeepMatrixFactorization(train_loader.dataset.csr_matrix, u_mid_layers=[1000], i_mid_layers=[1000],
-                                  final_dimension=32)
-dmf_alg.fit(train_loader, n_epochs=200, lr=1e-4)
+from algorithms.neural_alg import DeepMatrixFactorization
+from utilities.trainer import ExperimentConfig, Trainer
+
+dmf_alg = DeepMatrixFactorization(train_loader.dataset.csr_matrix, u_mid_layers=[100], i_mid_layers=[100],
+                                  final_dimension=64)
+conf = ExperimentConfig(lr=1e-4)
+trainer = Trainer(dmf_alg, train_loader, val_loader, conf)
+dmf_alg = trainer.fit()
+
+evaluate_rec_alg(dmf_alg, test_loader)

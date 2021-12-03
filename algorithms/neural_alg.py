@@ -51,9 +51,8 @@ class DeepMatrixFactorization(SGDBasedRecommenderAlgorithm):
         self.cosine_func = nn.CosineSimilarity(dim=-1)
 
         # Unfortunately, it seems that there is no CUDA support for sparse matrices..
-
         self.user_vectors = nn.Embedding.from_pretrained(torch.Tensor(matrix.todense()))
-        self.item_vectors = nn.Embedding.from_pretrained(self.user_vectors.weight.T) # todo: is it better to assign the weights later?
+        self.item_vectors = nn.Embedding.from_pretrained(self.user_vectors.weight.T)
 
         # Initialization of the network
         self.user_nn.apply(general_weight_init)
@@ -61,9 +60,12 @@ class DeepMatrixFactorization(SGDBasedRecommenderAlgorithm):
 
         self.name = 'DeepMatrixFactorization'
 
-        print('DeepMatrixFactorization class created')
+        print(f'Built {self.name} module \n'
+              f'- u_layers: {self.u_layers} \n'
+              f'- i_layers: {self.i_layers} \n')
 
-    def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor, device: str = 'cpu'):
+    def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor):
+
 
         # User pass
         u_vec = self.user_vectors(u_idxs)
@@ -72,17 +74,12 @@ class DeepMatrixFactorization(SGDBasedRecommenderAlgorithm):
         # Item pass
 
         i_vec = self.item_vectors(i_idxs)
-        i_vec = i_vec.to(device)
         i_vec = self.item_nn(i_vec)
 
         # Cosine
         sim = self.cosine_func(u_vec[:, None, :], i_vec)
 
         return sim
-
-    @staticmethod
-    def sparse_to_tensor(array):
-        return torch.tensor(array.toarray(), dtype=torch.float)
 
     @torch.no_grad()
     def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union:

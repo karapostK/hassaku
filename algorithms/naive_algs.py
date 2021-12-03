@@ -11,7 +11,7 @@ class RandomItems(RecommenderAlgorithm):
     def __init__(self):
         super().__init__()
         self.name = 'RandomItems'
-        print('RandomItems class created')
+        print(f'Built {self.name} module')
 
     def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union[np.ndarray, torch.Tensor]:
         # Generate random scores
@@ -29,7 +29,7 @@ class PopularItems(RecommenderAlgorithm):
         super().__init__()
         self.pop_distribution = pop_distribution
         self.name = 'PopularItems'
-        print('PopularItems class crated')
+        print(f'Built {self.name} module')
 
     def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union[np.ndarray, torch.Tensor]:
         out = self.pop_distribution[i_idxs]

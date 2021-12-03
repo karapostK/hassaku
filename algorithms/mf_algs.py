@@ -23,7 +23,8 @@ class SVDAlgorithm(RecommenderAlgorithm):
 
         self.name = 'SVDAlgorithm'
 
-        print('SVDAlgorithm class created')
+        print(f'Built {self.name} module \n'
+              f'- factors: {self.factors} ')
 
     def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union[np.ndarray, torch.Tensor]:
         assert (self.users_factors is not None) and \
@@ -35,7 +36,7 @@ class SVDAlgorithm(RecommenderAlgorithm):
 
         return out
 
-    def fit(self, matrix: sp.csr_matrix):
+    def fit(self, matrix: sp.spmatrix):
         print('Starting Fitting')
         matrix = matrix.asfptype()  # casting to float
 

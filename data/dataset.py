@@ -7,10 +7,16 @@ from torch.utils import data
 from torch.utils.data.dataset import T_co
 
 
-class ProtoRecDataset(data.Dataset):
+class RecDataset(data.Dataset):
     """
-    Dataset class to be used in ProtoRec. To use this class for any dataset, please refer to the splitter functions
-    (e.g. movielens_splitter.py)
+    This class is used to encapsulate a generic dataset of user x item interactions. The class is tailored for a
+    user-based leave-one-out split where:
+        - user-based means that for each user we withold part of the interactions as training, part as validation, and part as testing
+        - leave-one-out means that one interaction is used as testing, another one for validation, and the rest of the data for training
+    Even though it is not required by the code, the class has been used for time-sorted interactions in the leave-one-out strategy (
+    a.k.a. the last iteraction is used for testing, the one before for validation, and the rest for training).
+
+   To use this class for any dataset, please check how data should be split according to the pre-existing splitter functions (e.g. movielens_splitter.py)
 
     This class implements some basic functionalities about negative sampling. The negative sampling for a specific user
     is influenced by the split_set:
@@ -53,7 +59,7 @@ class ProtoRecDataset(data.Dataset):
 
         self.load_data()
 
-        print(f'Built ProtoRecDataset module \n'
+        print(f'Built RecDataset module \n'
               f'- data_path: {self.data_path} \n'
               f'- n_users: {self.n_users} \n'
               f'- n_items: {self.n_items} \n'
@@ -159,7 +165,7 @@ class ProtoRecDataset(data.Dataset):
                         by the negative items indexes. Shape is (1 + n_neg,)
             labels: npy array containing the labels. First position is 1, the others are 0. Shape is (1 + n_neg,).
 
-        """ # todo: maybe drop the labels.
+        """
 
         user_idx = self.coo_matrix.row[index].astype('int64')
         item_idx_pos = self.coo_matrix.col[index]
@@ -180,14 +186,14 @@ class ProtoRecDataset(data.Dataset):
         return user_idx, item_idxs, labels
 
 
-def get_protorecdataset_dataloader(data_path: str, split_set: str, n_neg: int, neg_strategy='uniform',
+def get_recdataset_dataloader(data_path: str, split_set: str, n_neg: int, neg_strategy='uniform',
                                    **loader_params) -> data.DataLoader:
     """
-    Returns the dataloader for a ProtoRecDataset
-    :param data_path, ... ,neg_strategy: check ProtoRecDataset class for info about these parameters
+    Returns the dataloader for a RecDataset
+    :param data_path, ... ,neg_strategy: check RecDataset class for info about these parameters
     :param loader_params: parameters for the Dataloader
     :return:
     """
-    protorec_dataset = ProtoRecDataset(data_path, split_set, n_neg, neg_strategy)
+    protorec_dataset = RecDataset(data_path, split_set, n_neg, neg_strategy)
 
     return data.DataLoader(protorec_dataset, **loader_params)

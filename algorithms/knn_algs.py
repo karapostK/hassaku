@@ -1,4 +1,5 @@
 import typing
+from abc import ABC, abstractmethod
 from functools import partial
 
 import numpy as np
@@ -6,89 +7,87 @@ import torch
 from scipy import sparse as sp
 
 from base_classes import RecommenderAlgorithm
-from utilities.similarities import SimilarityFunction, sim_mapping_to_func
+from utilities.similarities import SimilarityFunction
 
 
-class UserKNN(RecommenderAlgorithm):
+class KNNAlgorithm(RecommenderAlgorithm, ABC):
 
-    def __init__(self, sim_func_choice: SimilarityFunction = SimilarityFunction.cosine):
+    def __init__(self, sim_func: SimilarityFunction = SimilarityFunction.cosine, k: int = 100, **kwargs):
         """
-        Implement User k-nearest neighbours algorithms
-        :param sim_func_choice: similarity function to use
-        """
-        super().__init__()
-        self.sim_func_choice = sim_func_choice
-
-        self.pred_mtx = None
-
-        self.name = 'UserKNN'
-
-        print('UserKNN class created')
-
-    def fit(self, matrix: sp.spmatrix, k: int = 100, **kwargs):
-        """
-        :param matrix: user x item sparse matrix
+        Abstract class for K-nearest neighbours
+        :param sim_func: similarity function to use
         :param k: number of k nearest neighbours to consider
         :param kwargs: additional parameters for the similarity function (e.g. alpha for asymmetric cosine)
         """
-        print('Starting Fitting')
-        sim_fun = sim_mapping_to_func[self.sim_func_choice]
-        if self.sim_func_choice == SimilarityFunction.asymmetric_cosine:
-            sim_fun = partial(sim_fun, kwargs['alpha'])
-        elif self.sim_func_choice == SimilarityFunction.tversky:
-            sim_fun = partial(sim_fun, kwargs['alpha'], kwargs['beta'])
+        super().__init__()
 
-        sim_mtx = take_only_top_k(sim_fun(matrix), k=k)
+        self.sim_func = sim_func
+        if self.sim_func == SimilarityFunction.asymmetric_cosine:
+            self.sim_func = partial(self.sim_func, kwargs['alpha'])
+        elif self.sim_func == SimilarityFunction.tversky:
+            self.sim_func = partial(self.sim_func, kwargs['alpha'], kwargs['beta'])
+
+        self.k = k
+
+        self.pred_mtx = None
+
+        self.name = 'KNNAlgorithm'
+
+        print(f'Built {self.name} module \n'
+              f'- sim_func: {self.sim_func} \n'
+              f'- k: {self.k} \n')
+
+    @abstractmethod
+    def fit(self, matrix: sp.spmatrix):
+        """
+        :param matrix: user x item sparse matrix
+        """
+        pass
+
+    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union:
+        assert self.pred_mtx is not None, 'Prediction Matrix not computed, run fit!'
+        out = self.pred_mtx[u_idxs[:, None], i_idxs]
+        return out
+
+
+class UserKNN(KNNAlgorithm):
+
+    def __init__(self, sim_func: SimilarityFunction = SimilarityFunction.cosine, k: int = 100, **kwargs):
+        super().__init__(sim_func, k, **kwargs)
+        self.name = 'UserKNN'
+        print(f'Built {self.name} module \n')
+
+    def fit(self, matrix: sp.spmatrix):
+        """
+        :param matrix: user x item sparse matrix
+        """
+        print('Starting Fitting')
+
+        sim_mtx = take_only_top_k(self.sim_func(matrix), k=self.k)
 
         self.pred_mtx = sim_mtx @ matrix
         self.pred_mtx = self.pred_mtx.toarray()  # Not elegant but materializing the whole matrix makes the rest of the code easier to write/read
         print('End Fitting')
 
-    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union:
-        assert self.pred_mtx is not None, 'Prediction Matrix not computed, run fit!'
-        out = self.pred_mtx[u_idxs[:, None], i_idxs]
-        return out
 
+class ItemKNN(KNNAlgorithm):
 
-class ItemKNN(RecommenderAlgorithm):
-
-    def __init__(self, sim_func_choice: SimilarityFunction = SimilarityFunction.cosine):
-        """
-        Implement Item k-nearest neighbours algorithms
-        :param sim_func_choice: similarity function to use
-        """
-        super().__init__()
-        self.sim_func_choice = sim_func_choice
-
-        self.pred_mtx = None
-
+    def __init__(self, sim_func: SimilarityFunction = SimilarityFunction.cosine, k: int = 100, **kwargs):
+        super().__init__(sim_func, k, **kwargs)
         self.name = 'ItemKNN'
+        print(f'Built {self.name} module \n')
 
-        print('ItemKNN class created')
-
-    def fit(self, matrix, k=100, **kwargs):
+    def fit(self, matrix: sp.spmatrix):
         """
-        :param matrix: user x item matrix
-        :param k: number of k nearest neighbours to consider
-        :param kwargs: additional parameters for the similarity function (e.g. alpha for asymmetric cosine)
+        :param matrix: user x item sparse matrix
         """
         print('Starting Fitting')
-        sim_fun = sim_mapping_to_func[self.sim_func_choice]
-        if self.sim_func_choice == SimilarityFunction.asymmetric_cosine:
-            sim_fun = partial(sim_fun, kwargs['alpha'])
-        elif self.sim_func_choice == SimilarityFunction.tversky:
-            sim_fun = partial(sim_fun, kwargs['alpha'], kwargs['beta'])
 
-        sim_mtx = take_only_top_k(sim_fun(matrix.T), k=k)
+        sim_mtx = take_only_top_k(self.sim_func(matrix.T), k=self.k)
 
         self.pred_mtx = matrix @ sim_mtx.T
         self.pred_mtx = self.pred_mtx.toarray()  # Not elegant but materializing the whole matrix makes the rest of the code easier to write/read
         print('End Fitting')
-
-    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union:
-        assert self.pred_mtx is not None, 'Prediction Matrix not computed, run fit!'
-        out = self.pred_mtx[u_idxs[:, None], i_idxs]
-        return out
 
 
 def take_only_top_k(sim_mtx, k=100):
