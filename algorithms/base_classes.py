@@ -3,11 +3,9 @@ from abc import ABC, abstractmethod
 
 import torch
 from torch import nn
-from torch.utils.data import DataLoader
-from tqdm import tqdm, trange
 
 
-class RecommenderAlgorithm(nn.Module, ABC):
+class RecommenderAlgorithm(ABC):
     """
     It implements the basic class for a Recommender System Algorithm.
     Each new algorithm has to override the method 'pred'.
@@ -31,9 +29,9 @@ class RecommenderAlgorithm(nn.Module, ABC):
         """
 
 
-class SGDBasedRecommenderAlgorithm(RecommenderAlgorithm, ABC):
+class SGDBasedRecommenderAlgorithm(RecommenderAlgorithm, ABC, nn.Module):
     """
-    It extends the previous class by providing a fit function that perform a standard training procedure
+
     """
 
     def __init__(self):
@@ -42,32 +40,17 @@ class SGDBasedRecommenderAlgorithm(RecommenderAlgorithm, ABC):
 
         print('SGDBasedRecommenderAlgorithm class crated')
 
-    # todo incorporate the parameters from Protorec e.g. changing the loss function/optimizer
-    def fit(self, train_loader: DataLoader, n_epochs: int = 50, lr: float = 1e-4, device: str = 'cuda', **kwargs):
+    @abstractmethod
+    def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
+        """
+        Similar to predict but used mostly for training
+        """
 
-        optimizer = torch.optim.Adam(self.parameters(), lr=lr)
-        self.to(device)
-
-        for epoch in trange(n_epochs):
-
-            self.train()
-
-            epoch_train_loss = 0
-
-            for u_idxs, i_idxs, labels in tqdm(train_loader):
-                u_idxs = u_idxs.to(device)
-                i_idxs = i_idxs.to(device)
-                labels = labels.to(device)
-
-                out = self(u_idxs, i_idxs, device)
-
-                loss = nn.BCEWithLogitsLoss()(out.flatten(), labels.flatten())
-
-                epoch_train_loss += loss.item()
-
-                loss.backward()
-                optimizer.step()
-                optimizer.zero_grad()
-
-            epoch_train_loss /= len(train_loader)
-            print("Epoch {} - Epoch Avg Train Loss {:.3f} \n".format(epoch, epoch_train_loss))
+    def get_and_reset_other_loss(self) -> float:
+        """
+        Gets and reset the value of other losses defined for the specific module which go beyond the recommender system
+        loss and the l2 loss. For example an entropy-based loss for ProtoMF. This function is always called by Trainer
+        at the end of the batch pass to get the full loss! Be sure to implement it when the algorithm has additional losses!
+        :return: loss of the feature extractor
+        """
+        return 0
