@@ -78,7 +78,13 @@ class Trainer:
 
         self.optimizer = conf.optim(self.model.parameters(), lr=conf.lr, weight_decay=conf.wd)
 
-        print(f'Built Trainer module')
+        print(f'Built Trainer module \n'
+              f'- n_epochs: {self.n_epochs} \n'
+              f'- rec_loss: {self.rec_loss.__class__.__name__} \n'
+              f'- device: {self.device} \n'
+              f'- optimizing_metric: {self.optimizing_metric} \n'
+              f'- max_patience: {self.max_patience} \n'
+              f'- best_model_path: {self.best_model_path} \n')
 
     def fit(self):
         """

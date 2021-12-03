@@ -60,7 +60,9 @@ class DeepMatrixFactorization(SGDBasedRecommenderAlgorithm):
 
         self.name = 'DeepMatrixFactorization'
 
-        print('DeepMatrixFactorization class created')
+        print(f'Built {self.name} module \n'
+              f'- u_layers: {self.u_layers} \n'
+              f'- i_layers: {self.i_layers} \n')
 
     def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor):
 

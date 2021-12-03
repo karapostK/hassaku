@@ -31,7 +31,10 @@ class SLIM(RecommenderAlgorithm):
 
         self.name = 'SLIM'
 
-        print('SLIM class created')
+        print(f'Built {self.name} module \n'
+              f'- alpha: {self.alpha} \n'
+              f'- l1_ratio: {self.l1_ratio} \n'
+              f'- max_iter: {self.max_iter} \n')
 
     def fit(self, matrix: sp.spmatrix):
 
@@ -128,7 +131,8 @@ class EASE(RecommenderAlgorithm):
 
         self.name = 'EASE'
 
-        print('EASE class created')
+        print(f'Built {self.name} module \n'
+              f'- lam: {self.lam} ')
 
     def fit(self, matrix: sp.spmatrix):
         # Computer Gram matrix

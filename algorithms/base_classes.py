@@ -15,7 +15,7 @@ class RecommenderAlgorithm(ABC):
         super().__init__()
         self.name = 'RecommenderAlgorithm'
 
-        print('RecommenderAlgorithm class crated')
+        print(f'Built {self.name} module')
 
     @abstractmethod
     def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union:
@@ -38,7 +38,7 @@ class SGDBasedRecommenderAlgorithm(RecommenderAlgorithm, ABC, nn.Module):
         super().__init__()
         self.name = 'SGDBasedRecommenderAlgorithm'
 
-        print('SGDBasedRecommenderAlgorithm class crated')
+        print(f'Built {self.name} module')
 
     @abstractmethod
     def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
