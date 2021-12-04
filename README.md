@@ -28,5 +28,6 @@ This repository contains some of the algorithms that have been proposed in the f
 | Anchor-based Collaborative Filtering |  |  |
 | [Probablistic Matrix Factorization](https://proceedings.neurips.cc/paper/2007/file/d7322ed717dedf1eb4e6e52a37ea7bcd-Paper.pdf) |  |  |
 |(To check) [SQL-Rank](http://proceedings.mlr.press/v80/wu18c/wu18c.pdf) | | |
+|[Random Walk-based algorithms]](https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=4072747) | | |
 
 
