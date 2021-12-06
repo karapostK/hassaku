@@ -3,6 +3,7 @@ import typing
 import torch
 from scipy import sparse as sp
 from torch import nn
+from torch.distributions.normal import Normal
 
 from base_classes import SGDBasedRecommenderAlgorithm
 from utilities.utils import general_weight_init
@@ -66,7 +67,6 @@ class DeepMatrixFactorization(SGDBasedRecommenderAlgorithm):
 
     def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor):
 
-
         # User pass
         u_vec = self.user_vectors(u_idxs)
         u_vec = self.user_nn(u_vec)
@@ -81,8 +81,175 @@ class DeepMatrixFactorization(SGDBasedRecommenderAlgorithm):
 
         return sim
 
-    @torch.no_grad()
-    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union:
-        self.eval()
-        out = self(u_idxs, i_idxs)
+
+class SGDMatrixFactorization(SGDBasedRecommenderAlgorithm):
+    """Implements a simple Matrix Factorization model trained with gradient descent"""
+
+    def __init__(self, n_users: int, n_items: int, latent_dimension: int = 100):
+        super().__init__()
+
+        self.n_users = n_users
+        self.n_items = n_items
+        self.latent_dimension = latent_dimension
+
+        self.user_embeddings = nn.Embedding(self.n_users, self.latent_dimension)
+        self.item_embeddings = nn.Embedding(self.n_items, self.latent_dimension)
+
+        self.apply(general_weight_init)
+
+        self.name = 'SGDMatrixFactorization'
+
+        print(f'Built {self.name} module\n'
+              f'- latent_dimension: {self.latent_dimension}')
+
+    def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
+        u_embed = self.user_embeddings(u_idxs)
+        i_embed = self.item_embeddings(i_idxs)
+
+        out = (u_embed[:, None, :] * i_embed).sum(axis=-1)
+
+        return out
+
+
+class ProbabilisticMatrixFactorization(SGDMatrixFactorization):
+    """
+    https://proceedings.neurips.cc/paper/2007/file/d7322ed717dedf1eb4e6e52a37ea7bcd-Paper.pdf
+    """
+
+    def __init__(self, n_users: int, n_items: int, latent_dimension: int = 100):
+        super().__init__(n_users, n_items, latent_dimension)
+
+        self.global_noise = nn.Parameter(torch.ones(1))
+
+        self.apply(general_weight_init)
+
+        self.name = 'ProbabilisticMatrixFactorization'
+        print(f'Built {self.name} module')
+
+    def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
+        u_embed = self.user_embeddings(u_idxs)
+        u_sample = self._sample(u_embed)
+
+        i_embed = self.item_embeddings(i_idxs)
+        i_sample = self._sample(i_embed)
+
+        dot = (u_sample[:, None, :] + i_sample).sum(axis=-1)
+
+        dot += Normal(0., torch.exp(0.5 * self.global_noise)).rsample(dot.shape).squeeze()
+
+        return dot
+
+    def _sample(self, log_var: torch.Tensor) -> torch.Tensor:
+        std = torch.exp(0.5 * log_var)
+        sample = Normal(torch.zeros_like(std), std).rsample()
+        return sample
+
+
+class GeneralizedMatrixFactorizationNCF(SGDMatrixFactorization):
+    """
+    One of the models proposed in Neural Collaborative Filtering (https://dl.acm.org/doi/pdf/10.1145/3038912.3052569)
+    """
+
+    def __init__(self, n_users: int, n_items: int, latent_dimension: int = 100, apply_last_layer: bool = True):
+        """
+        :param apply_last_layer: whether the last layer of the network should be applied.
+        """
+        super().__init__(n_users, n_items, latent_dimension)
+
+        self.lin_projection = nn.Linear(latent_dimension, 1)
+        self.apply_last_layer = apply_last_layer
+
+        self.lin_projection.apply(general_weight_init)
+
+        self.name = 'GeneralizedMatrixFactorization'
+
+        print(f'Built {self.name} module \n'
+              f'- apply_last_layer: {self.apply_last_layer}')
+
+    def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
+        u_embed = self.user_embeddings(u_idxs)
+        i_embed = self.item_embeddings(i_idxs)
+
+        out = u_embed[:, None, :] * i_embed
+        if self.apply_last_layer:
+            out = self.lin_projection(out).squeeze()
+
+        return out
+
+
+class MultiLayerPerceptronNCF(SGDMatrixFactorization):
+    """
+    One of the models proposed in Neural Collaborative Filtering (https://dl.acm.org/doi/pdf/10.1145/3038912.3052569)
+    """
+
+    def __init__(self, n_users: int, n_items: int, middle_layers: typing.List[int], latent_dimension: int = 100,
+                 apply_last_layer: bool = True):
+        """
+        :param middle_layers: list of sizes of the middle layers. The initial layer size(2*latent_dimension) and the last layer (2) are automatically added
+        :param apply_last_layer: whether the last layer of the network should be applied.
+        """
+        super().__init__(n_users, n_items, latent_dimension)
+
+        self.layers = [self.latent_dimension * 2] + middle_layers + [1]
+        self.apply_last_layer = apply_last_layer
+
+        mlp = []
+        for i, (n_in, n_out) in enumerate(zip(self.layers[:-1], self.layers[1:])):
+            mlp.append(nn.Linear(n_in, n_out))
+
+            if i != len(self.layers) - 2:
+                mlp.append(nn.ReLU())
+        self.mlp = nn.Sequential(*mlp)
+
+        self.mlp.apply(general_weight_init)
+
+        self.name = 'MultiLayerPerceptronNCF'
+
+        print(f'Built {self.name} module \n'
+              f'- layers: {self.layers}'
+              f'- apply_last_layer: {self.apply_last_layer}')
+
+    def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
+        u_embed = self.user_embeddings(u_idxs)
+        i_embed = self.item_embeddings(i_idxs)
+
+        u_embed = torch.repeat_interleave(u_embed[:, None, :], i_embed.shape[1], dim=1)
+
+        ui_embed = torch.cat([u_embed, i_embed], dim=-1)
+
+        if self.apply_last_layer:
+            out = self.mlp(ui_embed).squeeze()
+        else:
+            out = self.mlp[:-1](ui_embed)
+
+        return out
+
+
+class NeuralMatrixFactorizationNCF(SGDBasedRecommenderAlgorithm):
+    """
+    From the paper (https://dl.acm.org/doi/pdf/10.1145/3038912.3052569). It combines MultiLayerPerceptronNCF and GeneralizedMatrixFactorizationNCF.
+    """
+
+    def __init__(self, n_users: int, n_items: int, middle_layers: typing.List[int], latent_dimension: int = 100):
+        super().__init__()
+
+        self.gmf = GeneralizedMatrixFactorizationNCF(n_users, n_items, latent_dimension, apply_last_layer=False)
+        self.mlp = MultiLayerPerceptronNCF(n_users, n_items, middle_layers, latent_dimension, apply_last_layer=False)
+
+        self.linear_projection = nn.Linear(latent_dimension + middle_layers[-1], 1)
+
+        self.linear_projection.apply(general_weight_init)
+
+        self.name = 'NeuralMatrixFactorizationNCF'
+
+        print(f'Built {self.name} module')
+
+    def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
+        gmf_out = self.gmf(u_idxs, i_idxs)
+        mlp_out = self.mlp(u_idxs, i_idxs)
+
+        concatenated = torch.cat((gmf_out, mlp_out), dim=-1)
+
+        out = self.linear_projection(concatenated).squeeze()
+
         return out

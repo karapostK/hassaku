@@ -54,3 +54,9 @@ class SGDBasedRecommenderAlgorithm(RecommenderAlgorithm, ABC, nn.Module):
         :return: loss of the feature extractor
         """
         return 0
+
+    @torch.no_grad()
+    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union:
+        self.eval()
+        out = self(u_idxs, i_idxs)
+        return out

@@ -45,4 +45,3 @@ class SVDAlgorithm(RecommenderAlgorithm):
         self.users_factors = u * s
         self.items_factors = vt.T
         print('End Fitting')
-
