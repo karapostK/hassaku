@@ -24,6 +24,7 @@ This repository contains some of the algorithms that have been proposed in the f
 | [iALS](http://yifanhu.net/PUB/cf.pdf) |  |  |
 | [eALS](https://dl.acm.org/doi/10.1145/2911451.2911489) |  |  |
 | [BPRMF](https://arxiv.org/ftp/arxiv/papers/1205/1205.2618.pdf) |  |  |
+| [Factorization Machines](https://ieeexplore.ieee.org/document/5694074) |  |  |
 | ProtoMF |  |  |
 | Anchor-based Collaborative Filtering |  |  |
 | [Probablistic Matrix Factorization](https://proceedings.neurips.cc/paper/2007/file/d7322ed717dedf1eb4e6e52a37ea7bcd-Paper.pdf) |  |  |
