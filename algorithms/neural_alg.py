@@ -3,7 +3,6 @@ import typing
 import torch
 from scipy import sparse as sp
 from torch import nn
-from torch.distributions.normal import Normal
 
 from base_classes import SGDBasedRecommenderAlgorithm
 from utilities.utils import general_weight_init
@@ -83,7 +82,10 @@ class DeepMatrixFactorization(SGDBasedRecommenderAlgorithm):
 
 
 class SGDMatrixFactorization(SGDBasedRecommenderAlgorithm):
-    """Implements a simple Matrix Factorization model trained with gradient descent"""
+    """
+    Implements a simple Matrix Factorization model trained with gradient descent
+    It is similar to Probablistic Matrix Factorization (https://proceedings.neurips.cc/paper/2007/file/d7322ed717dedf1eb4e6e52a37ea7bcd-Paper.pdf)
+    """
 
     def __init__(self, n_users: int, n_items: int, latent_dimension: int = 100):
         super().__init__()
@@ -109,40 +111,6 @@ class SGDMatrixFactorization(SGDBasedRecommenderAlgorithm):
         out = (u_embed[:, None, :] * i_embed).sum(axis=-1)
 
         return out
-
-
-class ProbabilisticMatrixFactorization(SGDMatrixFactorization):
-    """
-    https://proceedings.neurips.cc/paper/2007/file/d7322ed717dedf1eb4e6e52a37ea7bcd-Paper.pdf
-    """
-
-    def __init__(self, n_users: int, n_items: int, latent_dimension: int = 100):
-        super().__init__(n_users, n_items, latent_dimension)
-
-        self.global_noise = nn.Parameter(torch.ones(1))
-
-        self.apply(general_weight_init)
-
-        self.name = 'ProbabilisticMatrixFactorization'
-        print(f'Built {self.name} module')
-
-    def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
-        u_embed = self.user_embeddings(u_idxs)
-        u_sample = self._sample(u_embed)
-
-        i_embed = self.item_embeddings(i_idxs)
-        i_sample = self._sample(i_embed)
-
-        dot = (u_sample[:, None, :] + i_sample).sum(axis=-1)
-
-        dot += Normal(0., torch.exp(0.5 * self.global_noise)).rsample(dot.shape).squeeze()
-
-        return dot
-
-    def _sample(self, log_var: torch.Tensor) -> torch.Tensor:
-        std = torch.exp(0.5 * log_var)
-        sample = Normal(torch.zeros_like(std), std).rsample()
-        return sample
 
 
 class GeneralizedMatrixFactorizationNCF(SGDMatrixFactorization):
