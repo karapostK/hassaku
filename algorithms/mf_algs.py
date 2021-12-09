@@ -1,5 +1,6 @@
 import typing
 
+import implicit
 import numpy as np
 import torch
 from scipy import sparse as sp
@@ -45,3 +46,55 @@ class SVDAlgorithm(RecommenderAlgorithm):
         self.users_factors = u * s
         self.items_factors = vt.T
         print('End Fitting')
+
+
+class AlternatingLeastSquare(RecommenderAlgorithm):
+    def __init__(self, alpha: int, factors: int, regularization: float, n_iterations: int):
+        super().__init__()
+        '''
+        From Collaborative Filtering for Implicit Datasets (http://yifanhu.net/PUB/cf.pdf)
+        :param alpha: controls the confidence value (see original paper Collaborative Filtering for Implicit Datasets)
+        :param factors: embedding size
+        :param regularization: regularization factor (the l2 factor)
+        :param iter: number of iterations for ALS
+        '''
+
+        self.alpha = alpha
+        self.factors = factors
+        self.regularization = regularization
+        self.n_iterations = n_iterations
+
+        self.users_factors = None
+        self.items_factors = None
+
+        self.name = "AlternatingLeastSquare"
+
+        print(f'Built {self.name} module \n'
+              f'- alpha: {self.alpha} \n'
+              f'- factors: {self.factors} \n'
+              f'- regularization: {self.regularization} \n'
+              f'- n_iterations: {self.n_iterations} \n')
+
+    def fit(self, matrix: sp.spmatrix, use_gpu: bool = True):
+        print('Starting Fitting')
+
+        matrix = sp.csr_matrix(matrix.T)
+        als = implicit.als.AlternatingLeastSquares(factors=self.factors,
+                                                   regularization=self.regularization,
+                                                   iterations=self.n_iterations,
+                                                   use_gpu=use_gpu,
+                                                   num_threads=10)
+        als.fit(self.alpha * matrix)
+        self.items_factors = als.item_factors
+        self.users_factors = als.user_factors
+        print('End Fitting')
+
+    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union[np.ndarray, torch.Tensor]:
+        assert (self.users_factors is not None) and \
+               (self.items_factors is not None), 'User and Item factors are None! Call fit before predict'
+
+        batch_users = self.users_factors[u_idxs]
+        batch_items = self.items_factors[i_idxs]
+        out = (batch_items * batch_users[:, None, :]).sum(axis=-1)  # Carrying out the dot product
+
+        return out
