@@ -90,7 +90,42 @@ class RecSampledSoftmaxLoss(RecommenderSystemLoss):
             return sampled_loss.mean()
 
 
+class RecMSELoss(RecommenderSystemLoss):
+
+    def compute_loss(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        """
+        Computes the Mean Squared Error. NB. It applies a sigmoid function, so it is tailored to binary prediction
+        """
+        values = nn.Sigmoid()(logits)
+        loss = nn.MSELoss(reduction=self.aggregator)(values, labels)
+        return loss
+
+
+class RecSQLLoss(RecommenderSystemLoss):
+
+    def compute_loss(self, logits: torch.Tensor, labels: torch.Tensor):
+        """
+        Loss implemented in SQL-Rank: A Listwise Approach to Collaborative Ranking (https://arxiv.org/pdf/1803.00114.pdf)
+        It computes the ranking probability for a specific user:
+                                    ∑_j=1^m_i  log φ(x_uj)/(∑_l=j^m_i φ(x_ul))
+        It assumes that logits and labels have shape (n_items), or in other words, batch size is 1 since different users
+        have different length for the logits.
+        """
+        # Note that logits are sorted
+        phis = nn.Sigmoid()(logits).exp()
+
+        acc = torch.zeros(1, device=logits.device)
+
+        for i in range(len(phis)):
+            acc += torch.log(phis[i:].sum())
+
+        loss = acc - torch.log(phis).sum()
+        return loss
+
+
 class RecommenderSystemLossesEnum(Enum):
     bce = RecBinaryCrossEntropy
     bpr = RecBayesianPersonalizedRankingLoss
     sampled_softmax = RecSampledSoftmaxLoss
+    mse = RecMSELoss
+    sql = RecSQLLoss

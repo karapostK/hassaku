@@ -52,8 +52,8 @@ class RecDataset(data.Dataset):
 
         self.item_ids = None
 
-        self.coo_matrix = None
-        self.csr_matrix = None
+        self.iteration_matrix = None
+        self.sampling_matrix = None
 
         self.pop_distribution = None
 
@@ -63,7 +63,7 @@ class RecDataset(data.Dataset):
               f'- data_path: {self.data_path} \n'
               f'- n_users: {self.n_users} \n'
               f'- n_items: {self.n_items} \n'
-              f'- n_interactions: {self.coo_matrix.nnz} \n'
+              f'- n_interactions: {self.iteration_matrix.nnz} \n'
               f'- split_set: {self.split_set} \n'
               f'- n_neg: {self.n_neg} \n'
               f'- neg_strategy: {self.neg_strategy} \n')
@@ -96,8 +96,8 @@ class RecDataset(data.Dataset):
 
             val_coo = sp.coo_matrix(val_csr)
 
-            self.coo_matrix = val_coo
-            self.csr_matrix = val_csr + train_csr
+            self.iteration_matrix = val_coo
+            self.sampling_matrix = val_csr + train_csr
 
         elif self.split_set == 'test':
             test_lhs = pd.read_csv(os.path.join(self.data_path, 'listening_history_test.csv'))
@@ -108,14 +108,14 @@ class RecDataset(data.Dataset):
 
             test_coo = sp.coo_matrix(test_csr)
 
-            self.coo_matrix = test_coo
-            self.csr_matrix = test_csr + train_csr
+            self.iteration_matrix = test_coo
+            self.sampling_matrix = test_csr + train_csr
 
         elif self.split_set == 'train':
             train_coo = sp.coo_matrix(train_csr)
 
-            self.coo_matrix = train_coo
-            self.csr_matrix = train_csr
+            self.iteration_matrix = train_coo
+            self.sampling_matrix = train_csr
 
     def _neg_sample_uniform(self, row_idx: int) -> np.array:
         """
@@ -124,7 +124,8 @@ class RecDataset(data.Dataset):
         :return: npy array containing the negatively sampled items.
         """
 
-        consumed_items = self.csr_matrix.indices[self.csr_matrix.indptr[row_idx]:self.csr_matrix.indptr[row_idx + 1]]
+        consumed_items = self.sampling_matrix.indices[
+                         self.sampling_matrix.indptr[row_idx]:self.sampling_matrix.indptr[row_idx + 1]]
 
         # Uniform distribution without items consumed by the user
         p = np.ones(self.n_items)
@@ -142,7 +143,8 @@ class RecDataset(data.Dataset):
         :param row_idx: user id (or row in the matrix)
         :return: npy array containing the negatively sampled items.
         """
-        consumed_items = self.csr_matrix.indices[self.csr_matrix.indptr[row_idx]:self.csr_matrix.indptr[row_idx + 1]]
+        consumed_items = self.sampling_matrix.indices[
+                         self.sampling_matrix.indptr[row_idx]:self.sampling_matrix.indptr[row_idx + 1]]
 
         p = self.pop_distribution.copy()
         p[consumed_items] = 0.  # Excluding consumed items
@@ -153,7 +155,7 @@ class RecDataset(data.Dataset):
         return sampled
 
     def __len__(self) -> int:
-        return self.coo_matrix.nnz
+        return self.iteration_matrix.nnz
 
     def __getitem__(self, index) -> T_co:
         """
@@ -167,8 +169,8 @@ class RecDataset(data.Dataset):
 
         """
 
-        user_idx = self.coo_matrix.row[index].astype('int64')
-        item_idx_pos = self.coo_matrix.col[index]
+        user_idx = self.iteration_matrix.row[index].astype('int64')
+        item_idx_pos = self.iteration_matrix.col[index]
 
         # Select the correct negative sampling strategy
         if self.neg_strategy == 'uniform':
@@ -186,14 +188,103 @@ class RecDataset(data.Dataset):
         return user_idx, item_idxs, labels
 
 
+class UserRecDataset(RecDataset):
+
+    def __init__(self, data_path: str, split_set: str, pos_strategy: str = 'n_pos', neg_strategy: str = 'ratio',
+                 n_pos: int = 100, ro: int = None, n_neg: int = None):
+        """
+        This class iterates over the dataset user-wise. For each user, the class return n_pos positive instances and n_neg instances.
+        """
+        assert pos_strategy in ['n_pos', 'all'], f'Strategy for sampling positive ({pos_strategy}) not implemented'
+        assert neg_strategy in ['n_neg', 'ratio',
+                                'all'], f'Strategy for sampling negative ({neg_strategy}) not implemented'
+
+        if pos_strategy == 'n_pos':
+            assert n_pos >= 0, f'Value for n_pos ({n_pos}) not valid'
+        if neg_strategy == 'n_neg':
+            assert n_neg >= 0, f'Value for n_neg ({n_neg}) not valid'
+        elif neg_strategy == 'ratio':
+            assert ro is not None and ro >= 0, f'Value for ro ({ro}) not valid'
+
+        super().__init__(data_path, split_set, 0)  # todo: tbh this only is used to load the data
+
+        self.pos_strategy = pos_strategy
+        self.neg_strategy = neg_strategy
+        self.n_pos = n_pos
+        self.ro = ro
+        self.n_neg = n_neg
+
+        self.iteration_matrix = sp.csr_matrix(self.iteration_matrix)
+
+    def __len__(self):
+        return self.n_users
+
+    def __getitem__(self, user_index) -> T_co:
+
+        # Sampling positives
+        user_include_items = self.iteration_matrix[user_index].indices
+
+        if self.pos_strategy == 'all' or (self.pos_strategy == 'n_pos' and self.n_pos >= len(user_include_items)):
+            pos_items = user_include_items.copy()
+            np.random.shuffle(pos_items)
+        else:
+            pos_items = np.random.choice(user_include_items, self.n_pos, replace=False)
+
+        n_pos_items = len(pos_items)
+
+        # Sampling negatives
+        mask_neg = np.ones(self.n_items, dtype=bool)
+        user_exclude_items = self.sampling_matrix[user_index].indices
+        mask_neg[user_exclude_items] = False
+        all_negative_items = np.arange(self.n_items)[mask_neg]
+
+        n_items_left = len(all_negative_items)
+
+        if self.neg_strategy == 'all' or (self.neg_strategy == 'n_neg' and self.n_neg >= n_items_left) or (
+                self.neg_strategy == 'ratio' and n_pos_items * self.ro >= n_items_left):
+            # Take all the negatives
+            neg_items = all_negative_items.copy()
+            np.random.shuffle(neg_items)
+        elif self.neg_strategy == 'n_neg':
+            neg_items = np.random.choice(all_negative_items, self.n_neg, replace=False)
+        else:
+            neg_items = np.random.choice(all_negative_items, n_pos_items * self.ro, replace=False)
+
+        # Concatenating
+
+        items = np.concatenate([pos_items, neg_items])
+
+        # Labels
+        pos_labels = np.ones_like(pos_items)
+        neg_labels = np.zeros_like(neg_items)
+        labels = np.concatenate([pos_labels, neg_labels])
+
+        return user_index, items, labels
+
+
 def get_recdataset_dataloader(data_path: str, split_set: str, n_neg: int, neg_strategy='uniform',
-                                   **loader_params) -> data.DataLoader:
+                              **loader_params) -> data.DataLoader:
     """
     Returns the dataloader for a RecDataset
     :param data_path, ... ,neg_strategy: check RecDataset class for info about these parameters
     :param loader_params: parameters for the Dataloader
     :return:
     """
-    protorec_dataset = RecDataset(data_path, split_set, n_neg, neg_strategy)
+    recdataset = RecDataset(data_path, split_set, n_neg, neg_strategy)
 
-    return data.DataLoader(protorec_dataset, **loader_params)
+    return data.DataLoader(recdataset, **loader_params)
+
+
+def get_userrecdataset_dataloader(data_path: str, split_set: str, pos_strategy: str = 'n_pos',
+                                  neg_strategy: str = 'ratio',
+                                  n_pos: int = 100, ro: int = None, n_neg: int = None,
+                                  **loader_params) -> data.DataLoader:
+    """
+    Returns the dataloader for a UserRecDataset
+    :param data_path, ... ,n_neg: check UserRecDataset class for info about these parameters
+    :param loader_params: parameters for the Dataloader
+    :return:
+    """
+    userrecdataset = UserRecDataset(data_path, split_set, pos_strategy, neg_strategy, n_pos, ro, n_neg)
+
+    return data.DataLoader(userrecdataset, **loader_params)

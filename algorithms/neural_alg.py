@@ -198,13 +198,23 @@ class NeuralMatrixFactorizationNCF(SGDBasedRecommenderAlgorithm):
     From the paper (https://dl.acm.org/doi/pdf/10.1145/3038912.3052569). It combines MultiLayerPerceptronNCF and GeneralizedMatrixFactorizationNCF.
     """
 
-    def __init__(self, n_users: int, n_items: int, middle_layers: typing.List[int], latent_dimension: int = 100):
+    def __init__(self, gmf: GeneralizedMatrixFactorizationNCF, mlp: MultiLayerPerceptronNCF, alpha: float = 0.7):
+        """
+        Models should be already trained.
+        :param alpha: a value between 0 and 1 which is multiplied to the output embedding of gmf. (1-alpha) is multiplied
+        to the output embedding of mlp
+        """
+        assert alpha >= 0 and alpha <= 1, f"Alpha value {alpha} should be between 0 and 1!"
         super().__init__()
 
-        self.gmf = GeneralizedMatrixFactorizationNCF(n_users, n_items, latent_dimension, apply_last_layer=False)
-        self.mlp = MultiLayerPerceptronNCF(n_users, n_items, middle_layers, latent_dimension, apply_last_layer=False)
+        self.gmf = gmf
+        self.mlp = mlp
+        self.gmf.apply_last_layer = False
+        self.mlp.apply_last_layer = False
 
-        self.linear_projection = nn.Linear(latent_dimension + middle_layers[-1], 1)
+        self.alpha = alpha
+
+        self.linear_projection = nn.Linear(self.gmf.latent_dimension + self.mlp.layers[-2], 1)
 
         self.linear_projection.apply(general_weight_init)
 
@@ -215,7 +225,7 @@ class NeuralMatrixFactorizationNCF(SGDBasedRecommenderAlgorithm):
     def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
         gmf_out = self.gmf(u_idxs, i_idxs)
         mlp_out = self.mlp(u_idxs, i_idxs)
-
+        gmf_out *= self.a
         concatenated = torch.cat((gmf_out, mlp_out), dim=-1)
 
         out = self.linear_projection(concatenated).squeeze()
