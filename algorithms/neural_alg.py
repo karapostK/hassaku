@@ -84,7 +84,7 @@ class DeepMatrixFactorization(SGDBasedRecommenderAlgorithm):
 class SGDMatrixFactorization(SGDBasedRecommenderAlgorithm):
     """
     Implements a simple Matrix Factorization model trained with gradient descent
-    It is similar to Probablistic Matrix Factorization (https://proceedings.neurips.cc/paper/2007/file/d7322ed717dedf1eb4e6e52a37ea7bcd-Paper.pdf)
+    It is similar to Probabilistic Matrix Factorization (https://proceedings.neurips.cc/paper/2007/file/d7322ed717dedf1eb4e6e52a37ea7bcd-Paper.pdf)
     """
 
     def __init__(self, n_users: int, n_items: int, latent_dimension: int = 100):
@@ -231,3 +231,210 @@ class NeuralMatrixFactorizationNCF(SGDBasedRecommenderAlgorithm):
         out = self.linear_projection(concatenated).squeeze()
 
         return out
+
+
+class UProtoMF(SGDBasedRecommenderAlgorithm):
+    """
+    Implements the ProtoMF model with user prototypes
+    """
+
+    def __init__(self, n_users: int, n_items: int, latent_dimension: int = 100, n_prototypes: int = 20,
+                 sim_proto_weight: float = 1., sim_batch_weight: float = 1.):
+        super().__init__()
+
+        self.n_users = n_users
+        self.n_items = n_items
+        self.latent_dimension = latent_dimension
+        self.n_prototypes = n_prototypes
+        self.sim_proto_weight = sim_proto_weight
+        self.sim_batch_weight = sim_batch_weight
+
+        self.user_embed = nn.Embedding(self.n_users, self.latent_dimension)
+        self.item_embed = nn.Embedding(self.n_items, self.n_prototypes)
+
+        self.prototypes = nn.Parameter(torch.randn([self.n_prototypes, self.latent_dimension]))
+
+        self.cosine_sim_func = lambda x, y: (1 + nn.CosineSimilarity(dim=-1)(x, y)) / 2
+
+        self.user_embed.apply(general_weight_init)
+        self.item_embed.apply(general_weight_init)
+
+        self._acc_r_proto = 0
+        self._acc_r_batch = 0
+
+        self.name = 'UProtoMF'
+
+        print(f'Built {self.name} model \n'
+              f'- n_users: {self.n_users} \n'
+              f'- n_items: {self.n_items} \n'
+              f'- latent_dimension: {self.latent_dimension} \n'
+              f'- n_prototypes: {self.n_prototypes} \n'
+              f'- sim_proto_weight: {self.sim_proto_weight} \n'
+              f'- sim_batch_weight: {self.sim_batch_weight} \n')
+
+    def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
+        u_embed = self.user_embed(u_idxs)
+        i_embed = self.item_embed(i_idxs)
+
+        sim_mtx = self.cosine_sim_func(u_embed.unsqueeze(-2), self.prototypes)  # [batch_size,n_prototypes]
+
+        dots = (sim_mtx[:, None, :] * i_embed).sum(axis=-1)
+
+        # Compute regularization losses
+        self._acc_r_proto += - sim_mtx.max(dim=0).values.mean()
+        self._acc_r_batch += - sim_mtx.max(dim=1).values.mean()
+
+        return dots
+
+    def get_and_reset_other_loss(self) -> float:
+        acc_r_proto, acc_r_batch = self._acc_r_proto, self._acc_r_batch
+        self._acc_r_proto = self._acc_r_batch = 0
+        return self.sim_proto_weight * acc_r_proto + self.sim_batch_weight * acc_r_batch
+
+
+class IProtoMF(SGDBasedRecommenderAlgorithm):
+    """
+    Implements the ProtoMF model with item prototypes
+    """
+
+    def __init__(self, n_users: int, n_items: int, latent_dimension: int = 100, n_prototypes: int = 20,
+                 sim_proto_weight: float = 1., sim_batch_weight: float = 1.):
+        super().__init__()
+
+        self.n_users = n_users
+        self.n_items = n_items
+        self.latent_dimension = latent_dimension
+        self.n_prototypes = n_prototypes
+        self.sim_proto_weight = sim_proto_weight
+        self.sim_batch_weight = sim_batch_weight
+
+        self.user_embed = nn.Embedding(self.n_users, self.n_prototypes)
+        self.item_embed = nn.Embedding(self.n_items, self.latent_dimension)
+
+        self.prototypes = nn.Parameter(torch.randn([self.n_prototypes, self.latent_dimension]))
+
+        self.cosine_sim_func = lambda x, y: (1 + nn.CosineSimilarity(dim=-1)(x, y)) / 2
+
+        self.user_embed.apply(general_weight_init)
+        self.item_embed.apply(general_weight_init)
+
+        self._acc_r_proto = 0
+        self._acc_r_batch = 0
+
+        self.name = 'IProtoMF'
+
+        print(f'Built {self.name} model \n'
+              f'- n_users: {self.n_users} \n'
+              f'- n_items: {self.n_items} \n'
+              f'- latent_dimension: {self.latent_dimension} \n'
+              f'- n_prototypes: {self.n_prototypes} \n'
+              f'- sim_proto_weight: {self.sim_proto_weight} \n'
+              f'- sim_batch_weight: {self.sim_batch_weight} \n')
+
+    def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
+        u_embed = self.user_embed(u_idxs)
+        i_embed = self.item_embed(i_idxs)
+
+        sim_mtx = self.cosine_sim_func(i_embed.unsqueeze(-2), self.prototypes)  # [batch_size,n_neg + 1,n_prototypes]
+
+        dots = (u_embed[:, None, :] * sim_mtx).sum(axis=-1)
+
+        # Compute regularization losses
+        self._acc_r_proto += - sim_mtx.max(dim=0).values.mean()
+        self._acc_r_batch += - sim_mtx.max(dim=1).values.mean()
+
+        return dots
+
+    def get_and_reset_other_loss(self) -> float:
+        acc_r_proto, acc_r_batch = self._acc_r_proto, self._acc_r_batch
+        self._acc_r_proto = self._acc_r_batch = 0
+        return self.sim_proto_weight * acc_r_proto + self.sim_batch_weight * acc_r_batch
+
+
+class UIProtoMF(SGDBasedRecommenderAlgorithm):
+    """
+    Implements the ProtoMF model with item and user prototypes
+    """
+
+    def __init__(self, n_users: int, n_items: int, latent_dimension: int = 100, u_n_prototypes: int = 20,
+                 i_n_prototypes: int = 20, u_sim_proto_weight: float = 1., u_sim_batch_weight: float = 1.,
+                 i_sim_proto_weight: float = 1., i_sim_batch_weight: float = 1.):
+        super().__init__()
+
+        self.n_users = n_users
+        self.n_items = n_items
+        self.latent_dimension = latent_dimension
+        self.u_n_prototypes = u_n_prototypes
+        self.i_n_prototypes = i_n_prototypes
+        self.u_sim_proto_weight = u_sim_proto_weight
+        self.u_sim_batch_weight = u_sim_batch_weight
+        self.i_sim_proto_weight = i_sim_proto_weight
+        self.i_sim_batch_weight = i_sim_batch_weight
+
+        self.user_embed = nn.Embedding(self.n_users, self.latent_dimension)
+        self.item_embed = nn.Embedding(self.n_items, self.latent_dimension)
+
+        self.u_prototypes = nn.Parameter(torch.randn([self.u_n_prototypes, self.latent_dimension]))
+        self.i_prototypes = nn.Parameter(torch.randn([self.i_n_prototypes, self.latent_dimension]))
+
+        self.u_to_i_proj = nn.Linear(self.latent_dimension, self.i_n_prototypes)
+        self.i_to_u_proj = nn.Linear(self.latent_dimension, self.u_n_prototypes)
+
+        self.cosine_sim_func = lambda x, y: (1 + nn.CosineSimilarity(dim=-1)(x, y)) / 2
+
+        self.apply(general_weight_init)
+
+        self._u_acc_r_proto = 0
+        self._u_acc_r_batch = 0
+
+        self._i_acc_r_proto = 0
+        self._i_acc_r_batch = 0
+
+        self.name = 'UIProtoMF'
+
+        print(f'Built {self.name} model \n'
+              f'- n_users: {self.n_users} \n'
+              f'- n_items: {self.n_items} \n'
+              f'- latent_dimension: {self.latent_dimension} \n'
+              f'- u_n_prototypes: {self.u_n_prototypes} \n'
+              f'- i_n_prototypes: {self.i_n_prototypes} \n'
+              f'- u_sim_proto_weight: {self.u_sim_proto_weight} \n'
+              f'- u_sim_batch_weight: {self.u_sim_batch_weight} \n'
+              f'- i_sim_proto_weight: {self.i_sim_proto_weight} \n'
+              f'- i_sim_batch_weight: {self.i_sim_batch_weight} \n'
+              )
+
+    def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
+        u_embed = self.user_embed(u_idxs)
+        i_embed = self.item_embed(i_idxs)
+
+        # User pass
+        u_sim_mtx = self.cosine_sim_func(u_embed.unsqueeze(-2), self.u_prototypes)  # [batch_size,n_prototypes]
+        i_proj = self.i_to_u_proj(i_embed)
+
+        u_dots = (u_sim_mtx[:, None, :] * i_proj).sum(axis=-1)
+
+        self._u_acc_r_proto += - u_sim_mtx.max(dim=0).values.mean()
+        self._u_acc_r_batch += - u_sim_mtx.max(dim=1).values.mean()
+
+        # Item pass
+
+        i_sim_mtx = self.cosine_sim_func(i_embed.unsqueeze(-2), self.i_prototypes)  # [batch_size,n_neg + 1,n_prototypes]
+        u_proj = self.u_to_i_proj(u_embed)
+
+        i_dots = (u_proj[:, None, :] * i_sim_mtx).sum(axis=-1)
+
+        self._i_acc_r_proto += - i_sim_mtx.max(dim=0).values.mean()
+        self._i_acc_r_batch += - i_sim_mtx.max(dim=1).values.mean()
+
+        # Merge
+        dots = u_dots + i_dots
+        return dots
+
+    def get_and_reset_other_loss(self) -> float:
+        u_acc_r_proto, u_acc_r_batch = self._u_acc_r_proto, self._u_acc_r_batch
+        i_acc_r_proto, i_acc_r_batch = self._i_acc_r_proto, self._i_acc_r_batch
+        self._u_acc_r_proto = self._u_acc_r_batch = self._i_acc_r_proto = self._i_acc_r_batch = 0
+        u_reg = self.u_sim_proto_weight * u_acc_r_proto + self.u_sim_batch_weight * u_acc_r_batch
+        i_reg = self.i_sim_proto_weight * i_acc_r_proto + self.i_sim_batch_weight * i_acc_r_batch
+        return u_reg + i_reg
