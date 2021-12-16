@@ -94,6 +94,7 @@ def compute_tversky_sim_mtx(alpha, beta, matrix):
 
 
 class SimilarityFunction(Enum):
+    #todo: the enum functionality is not used at all
     jaccard = compute_jaccard_sim_mtx
     cosine = compute_cosine_sim_mtx
     pearson = compute_pearson_sim_mtx
