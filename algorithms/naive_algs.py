@@ -23,7 +23,7 @@ class PopularItems(RecommenderAlgorithm):
 
     def __init__(self, pop_distribution: np.ndarray):
         """
-        Assign a score to each item depending to its popularity.
+        Assign a score to each item depending on its popularity.
         :param pop_distribution: array with shape (n_items,). For each item we have its popularity value.
         """
         super().__init__()
