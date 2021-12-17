@@ -11,5 +11,5 @@ OPTIMIZING_METRIC = 'hit_ratio@10'  # Which metric will be used to assess during
 PROJECT_NAME = 'hassaku'
 
 # --- Path Constants --- #
-DATA_PATH = './data'
+DATA_PATH = 'data'
 WANDB_API_KEY_PATH = './wandb_api_key'

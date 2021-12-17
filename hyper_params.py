@@ -384,6 +384,12 @@ proto_double_tie_chose_shifted_and_div_hyper_params = {
     },
 }
 
+svd_hyper_param = {
+    **base_param,
+    'n_factors': tune.randint(10, 100),
+}
 alg_param = {
-    RecAlgorithmsEnum.random: base_param
+    RecAlgorithmsEnum.random: base_param,
+    RecAlgorithmsEnum.popular: base_param,
+    RecAlgorithmsEnum.svd: svd_hyper_param
 }

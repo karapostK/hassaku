@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from scipy import sparse as sp
 
-from base_classes import RecommenderAlgorithm
+from algorithms.base_classes import RecommenderAlgorithm
 from utilities.similarities import SimilarityFunction
 
 

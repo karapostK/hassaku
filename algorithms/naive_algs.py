@@ -3,7 +3,7 @@ import typing
 import numpy as np
 import torch
 
-from base_classes import RecommenderAlgorithm
+from algorithms.base_classes import RecommenderAlgorithm
 
 
 class RandomItems(RecommenderAlgorithm):

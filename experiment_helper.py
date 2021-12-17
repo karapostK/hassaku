@@ -1,253 +1,210 @@
-import argparse
 import os
 
-import wandb
+import numpy as np
 from ray import tune
 from ray.tune.integration.wandb import WandbLoggerCallback
 from ray.tune.schedulers import ASHAScheduler
 from ray.tune.stopper import TrialPlateauStopper
 from ray.tune.suggest.hyperopt import HyperOptSearch
-from rec_sys.protorec_dataset import get_protorecdataset_dataloader
-from rec_sys.tester import Tester
-from rec_sys.trainer import Trainer
 
-from data.dataset import get_recdataset_dataloader, get_userrecdataset_dataloader
+import wandb
+from data.dataset import get_recdataset_dataloader
 from hyper_params import alg_param
-from utilities.consts import NEG_VAL, OPTIMIZING_METRIC, SINGLE_SEED, NUM_SAMPLES, \
-    PROJECT_NAME, WANDB_API_KEY_PATH, DATA_PATH
+from utilities.consts import NEG_VAL, SINGLE_SEED, PROJECT_NAME, WANDB_API_KEY_PATH, DATA_PATH, OPTIMIZING_METRIC, \
+    NUM_SAMPLES
 from utilities.enums import RecAlgorithmsEnum
-from utilities.utils import reproducible, generate_id
+from utilities.eval import evaluate_recommender_algorithm
+from utilities.utils import generate_id, reproducible
 
 
-def load_data(conf: argparse.Namespace, split_set: str, dataset_type: str = 'inter'):
-    assert split_set in ['train', 'val', 'test'], f'Split set ({split_set}) invalid'
-    assert dataset_type in ['inter', 'user'], f'Type of Dataset ({dataset_type}) not defined'
-
-    if dataset_type == 'inter':
-        if split_set == 'train':
-            train_loader = get_recdataset_dataloader(
-                dataset_type=dataset_type,
-                data_path=conf.data_path,
-                split_set='train',
-                n_neg=conf.neg_train,
-                neg_sampling_strategy=conf.train_neg_sampling_strategy,
-                batch_size=conf.batch_size,
-                shuffle=True,
-                num_workers=2,
-                prefetch_factor=5
-            )
-        elif split_set == 'val':
-            val_loader = get_recdataset_dataloader(
-                dataset_type=dataset_type,
-                data_path=conf.data_path,
-                split_set='val',
-                n_neg=NEG_VAL,
-                neg_sampling_strategy=conf.eval_neg_sampling_strategy,
-                batch_size=conf.val_batch_size,
-                num_workers=2
-            )
-        else:
-            test_loader = get_recdataset_dataloader(
-                dataset_type=dataset_type,
-                data_path=conf.data_path,
-                split_set='test',
-                n_neg=NEG_VAL,
-                neg_sampling_strategy=conf.eval_neg_sampling_strategy,
-                batch_size=conf.val_batch_size,
-                num_workers=2
-            )
-    else:
-        if split_set == 'train':
-            train_loader = get_recdataset_dataloader(
-                dataset_type=dataset_type,
-                data_path=conf.data_path,
-                split_set='train',
-                n_neg=conf.neg_train if 'neg_train' in conf else None,
-                neg_sampling_strategy=conf.train_neg_sampling_strategy,
-                pos_strategy='n_pos',
-                neg_strategy='ratio',
-                neg_pos_ratio=3,
-                n_pos=100,
-                batch_size=conf.batch_size,
-                shuffle=True,
-                num_workers=2,
-                prefetch_factor=5
-            )
-            elif split_set == 'val':
-            val_loader = get_protorecdataset_dataloader(
-                dataset_type=dataset_type,
-                data_path=conf.data_path,
-                split_set='val',
-                n_neg=NEG_VAL,
-                neg_strategy=conf.eval_neg_strategy,
-                batch_size=conf.val_batch_size,
-                num_workers=2
-            )
-        else:
-            test_loader = get_protorecdataset_dataloader(
-                dataset_type=dataset_type,
-                data_path=conf.data_path,
-                split_set='test',
-                n_neg=NEG_VAL,
-                neg_strategy=conf.eval_neg_strategy,
-                batch_size=conf.val_batch_size,
-                num_workers=2
-            )
-        dataloader_getter = get_userrecdataset_dataloader
-
+def load_data(conf: dict, split_set: str):
     if split_set == 'train':
         train_loader = get_recdataset_dataloader(
-            data_path=conf.data_path,
+            'inter',
+            data_path=conf['data_path'],
             split_set='train',
-            n_neg=conf.neg_train,
-            neg_strategy=conf.train_neg_strategy,
-            batch_size=conf.batch_size,
+            n_neg=conf['neg_train'] if "neg_train" in conf else 4,
+            neg_strategy=conf['train_neg_stratey'] if 'train_neg_stratey' in conf else 'uniform',
+            batch_size=conf['batch_size'] if 'batch_size' in conf else 64,
             shuffle=True,
             num_workers=2,
             prefetch_factor=5
         )
+        return train_loader
     elif split_set == 'val':
-        val_loader = get_protorecdataset_dataloader(
-            data_path=conf.data_path,
+        val_loader = get_recdataset_dataloader(
+            'inter',
+            data_path=conf['data_path'],
             split_set='val',
             n_neg=NEG_VAL,
-            neg_strategy=conf.eval_neg_strategy,
-            batch_size=conf.val_batch_size,
+            neg_strategy=conf['eval_neg_strategy'],
+            batch_size=conf['val_batch_size'],
             num_workers=2
         )
-    else:
-
-        test_loader = get_protorecdataset_dataloader(
-            data_path=conf.data_path,
+        return val_loader
+    elif split_set == 'test':
+        test_loader = get_recdataset_dataloader(
+            'inter',
+            data_path=conf['data_path'],
             split_set='test',
             n_neg=NEG_VAL,
-            neg_strategy=conf.eval_neg_strategy,
-            batch_size=conf.val_batch_size,
+            neg_strategy=conf['eval_neg_strategy'],
+            batch_size=conf['val_batch_size'],
             num_workers=2
         )
 
-        return {'test_loader': test_loader}
+        return test_loader
 
 
-def start_training(config, checkpoint_dir=None):
-    config = argparse.Namespace(**config)
-    print(config)
+def build_algorithm(alg: RecAlgorithmsEnum, conf: dict, dataloader):
+    if alg == RecAlgorithmsEnum.random:
+        return RecAlgorithmsEnum.random.value()
+    elif alg == RecAlgorithmsEnum.popular:
+        return RecAlgorithmsEnum.popular.value(dataloader.dataset.pop_distribution)
+    elif alg == RecAlgorithmsEnum.svd:
+        return RecAlgorithmsEnum.svd.value(conf['n_factors'])
 
-    # ---- Dataloader ---- #
 
-    data_loaders_dict = load_data(config)
+def tune_training(conf: dict, checkpoint_dir=None):
+    """
+    Function executed by ray tune.
+    """
+    train_loader = load_data(conf, 'train')
+    val_loader = load_data(conf, 'val')
 
-    reproducible(config.seed)
+    reproducible(conf['seed'])
 
-    trainer = Trainer(data_loaders_dict['train_loader'], data_loaders_dict['val_loader'], config)
+    alg = build_algorithm(conf['alg'], conf, train_loader)
 
-    trainer.run()
+    if conf['alg'] in [RecAlgorithmsEnum.svd]:
+        alg.fit(train_loader.dataset.iteration_matrix)
+        metrics_values = evaluate_recommender_algorithm(alg, val_loader, conf['seed'])
+        tune.report(**metrics_values)
+        with tune.checkpoint_dir(0) as checkpoint_dir:
+            np.savez(os.path.join(checkpoint_dir, 'best_model.npz'),
+                     users_factors=alg.users_factors, items_factors=alg.items_factors)
 
+        return metrics_values
+
+
+def run_train_val(conf: dict, run_name: str):
+    best_config = None
+    best_checkpoint = None
+
+    print(conf)
+
+    with open(WANDB_API_KEY_PATH) as wandb_file:
+        wandb_api_key = wandb_file.read()
+
+    #    train_loader = load_data(conf, 'train')
+
+    # ---- Train and Val ---- #
+    if conf['alg'] in [RecAlgorithmsEnum.random, RecAlgorithmsEnum.popular]:
+        # No training and hyperparameter selection needed
+
+        best_config = conf
+        val_loader = load_data(best_config, 'val')
+        alg = build_algorithm(best_config['alg'], best_config, val_loader)
+
+        metrics_values = evaluate_recommender_algorithm(alg, val_loader, conf['seed'])
+        wandb.login(key=wandb_api_key)
+        wandb.init(project=PROJECT_NAME, group=run_name, config=best_config, name=run_name, force=True,
+                   job_type='train/val', tags=run_name.split('_'))
+        wandb.log(metrics_values)
+        wandb.finish()
+    else:
+        # Hyperparameter Optimization
+        metric_name = OPTIMIZING_METRIC
+
+        # Search Algorithm
+        search_alg = HyperOptSearch(random_state_seed=conf['seed'])
+
+        if os.path.basename(conf['data_path']) == 'lfm2b-1m':
+            scheduler = ASHAScheduler(grace_period=4)
+        else:
+            scheduler = None
+
+        # Logger
+        callback = WandbLoggerCallback(project=PROJECT_NAME, log_config=True, api_key=wandb_api_key,
+                                       reinit=True, force=True, job_type='train/val', tags=run_name.split('_'))
+
+        # Stopper
+        stopper = TrialPlateauStopper(metric_name, std=1e-3, num_results=5, grace_period=10)
+
+        tune.register_trainable(run_name, tune_training)
+        analysis = tune.run(
+            run_name,
+            config=conf,
+            name=generate_id(prefix=run_name),
+            resources_per_trial={'gpu': 0, 'cpu': 1},
+            scheduler=scheduler,
+            search_alg=search_alg,
+            num_samples=NUM_SAMPLES,
+            callbacks=[callback],
+            metric=metric_name,
+            stop=stopper,
+            mode='max'
+        )
+        best_trial = analysis.get_best_trial(metric_name, 'max', scope='all')
+        best_config = best_trial.config
+        best_checkpoint = analysis.get_best_checkpoint(best_trial, metric_name, 'max')
+
+    return best_config, best_checkpoint
+
+
+def run_test(run_name: str, best_config: dict, best_checkpoint=None):
+    test_loader = load_data(best_config, 'test')
+
+    with open(WANDB_API_KEY_PATH) as wandb_file:
+        wandb_api_key = wandb_file.read()
+
+    wandb.login(key=wandb_api_key)
+    wandb.init(project=PROJECT_NAME, group='test', config=best_config, name=run_name, force=True,
+               job_type='test', tags=run_name.split('_'))
+
+    # ---- Test ---- #
+    alg = build_algorithm(best_config['alg'], best_config, test_loader)
+
+    if best_config['alg'] in [RecAlgorithmsEnum.random, RecAlgorithmsEnum.popular]:
+        metrics_values = evaluate_recommender_algorithm(alg, test_loader, best_config['seed'])
+        wandb.log(metrics_values)
+    elif best_config['alg'] in [RecAlgorithmsEnum.svd]:
+        best_checkpoint = os.path.join(best_checkpoint, 'best_model.npz')
+        with np.load(best_checkpoint) as array_dict:
+            alg.users_factors = array_dict['users_factors']
+            alg.items_factors = array_dict['items_factors']
+        metrics_values = evaluate_recommender_algorithm(alg, test_loader, best_config['seed'])
+        wandb.log(metrics_values)
     wandb.finish()
 
-
-def start_testing(config, model_load_path: str):
-    config = argparse.Namespace(**config)
-    print(config)
-
-    data_loaders_dict = load_data(config, is_train=False)
-
-    reproducible(config.seed)
-
-    tester = Tester(data_loaders_dict['test_loader'], config, model_load_path)
-
-    metric_values = tester.test()
-    return metric_values
+    return metrics_values
 
 
 def start_hyper(alg: RecAlgorithmsEnum, dataset: str, seed: int = SINGLE_SEED):
     print('Starting Hyperparameter Optimization')
     print(f'Seed is {seed}')
 
-    # ---- Preparing parameters for tune.run ---- #
-    metric_name = '_metric/' + OPTIMIZING_METRIC
-    # Search Algorithm
-    search_alg = HyperOptSearch(random_state_seed=seed)
-
-    # Scheduler
-    if dataset == 'lfm2b-1m':
-        scheduler = ASHAScheduler(grace_period=4)
-    else:
-        scheduler = None
-
-    # Logger
-    with open(WANDB_API_KEY_PATH) as wandb_file:
-        wandb_api_key = wandb_file.read()
-    callback = WandbLoggerCallback(project=PROJECT_NAME, log_config=True, api_key=wandb_api_key,
-                                   reinit=True, force=True, job_type='train/val', tags=[alg.name, str(seed), dataset])
-
-    # Stopper
-    stopper = TrialPlateauStopper(metric_name, std=1e-3, num_results=5, grace_period=10)
-
     # ---- Algorithm's parameters and hyperparameters ---- #
     conf = alg_param[alg]
     conf['alg'] = alg
-    # Hostname
-    host_name = os.uname()[1][:2]
 
     # Dataset
-    conf['data_path'] = os.path.join(DATA_PATH, dataset)
+    conf['data_path'] = os.path.join(os.getcwd(), DATA_PATH, dataset)
 
     # Seed
     conf['seed'] = seed
 
-    group_name = f'{alg.name}_{dataset}_{host_name}_{seed}'
-    tune.register_trainable(group_name, start_training)
-    analysis = tune.run(
-        group_name,
-        config=conf,
-        name=generate_id(prefix=group_name),
-        resources_per_trial={'gpu': 0.2, 'cpu': 1},
-        scheduler=scheduler,
-        search_alg=search_alg,
-        num_samples=1 if alg in [RecAlgorithmsEnum.random, RecAlgorithmsEnum.popular] else NUM_SAMPLES,
-        callbacks=[callback],
-        metric=metric_name,
-        mode='max',
-        stop=stopper
-    )
+    # Hostname
+    host_name = os.uname()[1][:2]
 
-    # ---- Get the best trial ---- #
-    best_trial = analysis.get_best_trial(metric_name, 'max',
-                                         scope='all')  # take the trial that got the max over all epochs
-    best_trial_config = best_trial.config
-    best_trial_checkpoint = os.path.join(analysis.get_best_checkpoint(best_trial, metric_name, 'max'), 'best_model.pth')
+    run_name = f'{alg.name}_{dataset}_{host_name}_{seed}'
 
-    # ---- Test the best trial ---- #
-    wandb.login(key=wandb_api_key)
-    wandb.init(project=PROJECT_NAME, group='test_results', config=best_trial_config, name=group_name, force=True,
-               job_type='test', tags=[alg.name, str(seed), dataset])
-    metric_values = start_testing(best_trial_config, best_trial_checkpoint)
-    wandb.finish()
+    # ---- Train/Validation ---- #
+    print('Start Train/Val')
+    best_config, best_checkpoint = run_train_val(conf, run_name)
+
+    print('Start Test')
+    metric_values = run_test(run_name, best_config, best_checkpoint)
+
+    print('End')
     return metric_values
-
-# def start_multiple_hyper(model: str, dataset: str, seed_list: List = SEED_LIST):
-#     print('Starting Multi-Hyperparameter Optimization')
-#     print('seed_list is ', seed_list)
-#     metric_values_list = []
-#     mean_values = dict()
-#
-#     for seed in seed_list:
-#         metric_values_list.append(start_hyper(conf, model, dataset, seed))
-#
-#     for key in metric_values_list[0].keys():
-#         _sum = 0
-#         for metric_values in metric_values_list:
-#             _sum += metric_values[key]
-#         _mean = _sum / len(metric_values_list)
-#
-#         mean_values[key] = _mean
-#
-#     group_name = f'{model}_{dataset}'
-#     with open('./wandb_api_key') as wandb_file:
-#         wandb_api_key = wandb_file.read()
-#     wandb.login(key=wandb_api_key)
-#     wandb.init(project=PROJECT_NAME, group='aggr_results', name=group_name, force=True, job_type='test',
-#                tags=[model, dataset])
-#     wandb.log(mean_values)
-#     wandb.finish()

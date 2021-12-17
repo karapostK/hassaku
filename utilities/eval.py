@@ -101,15 +101,16 @@ class Evaluator:
         return metrics_dict
 
 
-def evaluate_recommender_algorithm(alg: RecommenderAlgorithm, test_loader: DataLoader, seed: int = SINGLE_SEED):
+def evaluate_recommender_algorithm(alg: RecommenderAlgorithm, eval_loader: DataLoader, seed: int = SINGLE_SEED):
     reproducible(seed)
 
-    evaluator = Evaluator(test_loader.dataset.n_users)
+    evaluator = Evaluator(eval_loader.dataset.n_users)
 
-    for u_idxs, i_idxs, labels in test_loader:
+    for u_idxs, i_idxs, labels in eval_loader:
         out = alg.predict(u_idxs, i_idxs)
 
         evaluator.eval_batch(out)
 
     metrics_values = evaluator.get_results()
     print_results(metrics_values)
+    return metrics_values
