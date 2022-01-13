@@ -1,7 +1,9 @@
 import torch
+from hyperopt import hp
 from ray import tune
 
 from utilities.enums import RecAlgorithmsEnum
+from utilities.rec_losses import RecommenderSystemLossesEnum
 
 base_param = {
     'device': 'cuda' if torch.cuda.is_available() else 'cpu',
@@ -14,7 +16,7 @@ base_hyper_params = {
     **base_param,
     'neg_train': tune.randint(1, 50),
     'train_neg_strategy': tune.choice(['popular', 'uniform']),
-    'loss_func_name': tune.choice(['bce', 'bpr', 'sampled_softmax']),
+    'rec_loss': tune.choice([RecommenderSystemLossesEnum.bce,RecommenderSystemLossesEnum.bpr,RecommenderSystemLossesEnum.sampled_softmax]),
     'batch_size': tune.lograndint(64, 512, 2),
     'optim_param': {
         'optim': tune.choice(['adam', 'adagrad']),
@@ -23,373 +25,55 @@ base_hyper_params = {
     },
 }
 
-mf_hyper_params = {
+sgdmf_hyper_params = {
     **base_hyper_params,
-    'loss_func_aggr': 'mean',
-    'ft_ext_param': {
-        "ft_type": "detached",
-        'embedding_dim': tune.randint(10, 100),
-        'user_ft_ext_param': {
-            "ft_type": "embedding",
-        },
-        'item_ft_ext_param': {
-            "ft_type": "embedding",
-        }
-    },
-}
-anchor_hyper_params = {
-    **base_hyper_params,
-    'loss_func_aggr': 'sum',
-    'ft_ext_param': {
-        "ft_type": "acf",
-        'embedding_dim': tune.randint(10, 100),
-        'n_anchors': tune.randint(10, 100),
-        'delta_exc': tune.loguniform(1e-2, 10),
-        'delta_inc': tune.loguniform(1e-2, 10),
-    },
-}
-
-user_acf_hyper_params = {
-    **base_hyper_params,
-    'loss_func_aggr': 'sum',
-    'ft_ext_param': {
-        "ft_type": "detached",
-        'embedding_dim': tune.randint(10, 100),
-        'user_ft_ext_param': {
-            "ft_type": "acf",
-            'n_anchors': tune.randint(10, 100),
-            'delta_exc': tune.loguniform(1e-2, 10),
-            'delta_inc': tune.loguniform(1e-2, 10),
-        },
-        'item_ft_ext_param': {
-            "ft_type": "embedding",
-        }
-    },
-}
-
-item_acf_hyper_params = {
-    **base_hyper_params,
-    'loss_func_aggr': 'sum',
-    'ft_ext_param': {
-        "ft_type": "detached",
-        'embedding_dim': tune.randint(10, 100),
-        'item_ft_ext_param': {
-            "ft_type": "acf",
-            'n_anchors': tune.randint(10, 100),
-            'delta_exc': tune.loguniform(1e-2, 10),
-            'delta_inc': tune.loguniform(1e-2, 10),
-        },
-        'user_ft_ext_param': {
-            "ft_type": "embedding",
-        }
-    },
-}
-
-user_proto_standard_hyper_params = {
-    **base_hyper_params,
-    'loss_func_aggr': 'mean',
-    'ft_ext_param': {
-        "ft_type": "prototypes",
-        'embedding_dim': tune.randint(10, 100),
-        'user_ft_ext_param': {
-            "ft_type": "prototypes",
-            'sim_proto_weight': tune.loguniform(1e-3, 10),
-            'sim_batch_weight': tune.loguniform(1e-3, 10),
-            'use_weight_matrix': False,
-            'n_prototypes': tune.randint(10, 100),
-            'cosine_type': 'standard',
-            'reg_batch_type': tune.choice(['max', 'soft']),
-            'reg_proto_type': tune.choice(['max', 'soft', 'incl'])
-        },
-        'item_ft_ext_param': {
-            "ft_type": "embedding",
-        }
-    },
-}
-
-user_proto_shifted_hyper_params = {
-    **base_hyper_params,
-    'loss_func_aggr': 'mean',
-    'ft_ext_param': {
-        "ft_type": "prototypes",
-        'embedding_dim': tune.randint(10, 100),
-        'user_ft_ext_param': {
-            "ft_type": "prototypes",
-            'sim_proto_weight': tune.loguniform(1e-3, 10),
-            'sim_batch_weight': tune.loguniform(1e-3, 10),
-            'use_weight_matrix': False,
-            'n_prototypes': tune.randint(10, 100),
-            'cosine_type': 'shifted',
-            'reg_batch_type': tune.choice(['max', 'soft']),
-            'reg_proto_type': tune.choice(['max', 'soft', 'incl'])
-        },
-        'item_ft_ext_param': {
-            "ft_type": "embedding",
-        }
-    },
-}
-
-user_proto_shifted_and_div_hyper_params = {
-    **base_hyper_params,
-    'loss_func_aggr': 'mean',
-    'ft_ext_param': {
-        "ft_type": "prototypes",
-        'embedding_dim': tune.randint(10, 100),
-        'user_ft_ext_param': {
-            "ft_type": "prototypes",
-            'sim_proto_weight': tune.loguniform(1e-3, 10),
-            'sim_batch_weight': tune.loguniform(1e-3, 10),
-            'use_weight_matrix': False,
-            'n_prototypes': tune.randint(10, 100),
-            'cosine_type': 'shifted_and_div',
-            'reg_batch_type': tune.choice(['max', 'soft']),
-            'reg_proto_type': tune.choice(['max', 'soft', 'incl'])
-        },
-        'item_ft_ext_param': {
-            "ft_type": "embedding",
-        }
-    },
-}
-
-user_proto_chose_hyper_params = {
-    **base_hyper_params,
-    'loss_func_aggr': 'mean',
-    'ft_ext_param': {
-        "ft_type": "prototypes",
-        'embedding_dim': tune.randint(10, 100),
-        'user_ft_ext_param': {
-            "ft_type": "prototypes",
-            'sim_proto_weight': tune.loguniform(1e-3, 10),
-            'sim_batch_weight': 0,
-            'use_weight_matrix': False,
-            'n_prototypes': tune.randint(10, 100),
-            'cosine_type': 'shifted',
-            'reg_proto_type': 'soft'
-        },
-        'item_ft_ext_param': {
-            "ft_type": "embedding",
-        }
-    },
-}
-
-item_proto_chose_hyper_params = {
-    **base_hyper_params,
-    'loss_func_aggr': 'mean',
-    'ft_ext_param': {
-        "ft_type": "prototypes",
-        'embedding_dim': tune.randint(10, 100),
-        'item_ft_ext_param': {
-            "ft_type": "prototypes",
-            'sim_proto_weight': tune.loguniform(1e-3, 10),
-            'sim_batch_weight': 0,
-            'use_weight_matrix': False,
-            'n_prototypes': tune.randint(10, 100),
-            'cosine_type': 'shifted',
-            'reg_proto_type': 'soft'
-        },
-        'user_ft_ext_param': {
-            "ft_type": "embedding",
-        }
-    },
-}
-
-proto_double_tie_chose_hyper_params = {
-    **base_hyper_params,
-    'loss_func_aggr': 'mean',
-    'ft_ext_param': {
-        "ft_type": "prototypes_double_tie",
-        'embedding_dim': tune.randint(10, 100),
-        'item_ft_ext_param': {
-            "ft_type": "prototypes_double_tie",
-            'sim_proto_weight': tune.loguniform(1e-3, 10),
-            'sim_batch_weight': 0,
-            'use_weight_matrix': False,
-            'n_prototypes': tune.randint(10, 100),
-            'cosine_type': 'shifted',
-            'reg_proto_type': 'soft'
-        },
-        'user_ft_ext_param': {
-            "ft_type": "prototypes_double_tie",
-            'sim_proto_weight': tune.loguniform(1e-3, 10),
-            'sim_batch_weight': 0,
-            'use_weight_matrix': False,
-            'n_prototypes': tune.randint(10, 100),
-            'cosine_type': 'shifted',
-            'reg_proto_type': 'soft'
-        },
-    },
-}
-user_proto_chose_original_hyper_params = {
-    **base_hyper_params,
-    'loss_func_aggr': 'mean',
-    'ft_ext_param': {
-        "ft_type": "prototypes",
-        'embedding_dim': tune.randint(10, 100),
-        'user_ft_ext_param': {
-            "ft_type": "prototypes",
-            'sim_proto_weight': tune.loguniform(1e-3, 10),
-            'sim_batch_weight': tune.loguniform(1e-3, 10),
-            'use_weight_matrix': False,
-            'n_prototypes': tune.randint(10, 100),
-            'cosine_type': 'shifted',
-            'reg_proto_type': 'max',
-            'reg_batch_type': 'max',
-        },
-        'item_ft_ext_param': {
-            "ft_type": "embedding",
-        }
-    },
-}
-
-item_proto_chose_original_hyper_params = {
-    **base_hyper_params,
-    'loss_func_aggr': 'mean',
-    'ft_ext_param': {
-        "ft_type": "prototypes",
-        'embedding_dim': tune.randint(10, 100),
-        'item_ft_ext_param': {
-            "ft_type": "prototypes",
-            'sim_proto_weight': tune.loguniform(1e-3, 10),
-            'sim_batch_weight': tune.loguniform(1e-3, 10),
-            'use_weight_matrix': False,
-            'n_prototypes': tune.randint(10, 100),
-            'cosine_type': 'shifted',
-            'reg_proto_type': 'max',
-            'reg_batch_type': 'max'
-        },
-        'user_ft_ext_param': {
-            "ft_type": "embedding",
-        }
-    },
-}
-proto_double_tie_chose_original_hyper_params = {
-    **base_hyper_params,
-    'loss_func_aggr': 'mean',
-    'ft_ext_param': {
-        "ft_type": "prototypes_double_tie",
-        'embedding_dim': tune.randint(10, 100),
-        'item_ft_ext_param': {
-            "ft_type": "prototypes_double_tie",
-            'sim_proto_weight': tune.loguniform(1e-3, 10),
-            'sim_batch_weight': tune.loguniform(1e-3, 10),
-            'use_weight_matrix': False,
-            'n_prototypes': tune.randint(10, 100),
-            'cosine_type': 'shifted',
-            'reg_proto_type': 'max',
-            'reg_batch_type': 'max'
-        },
-        'user_ft_ext_param': {
-            "ft_type": "prototypes_double_tie",
-            'sim_proto_weight': tune.loguniform(1e-3, 10),
-            'sim_batch_weight': tune.loguniform(1e-3, 10),
-            'use_weight_matrix': False,
-            'n_prototypes': tune.randint(10, 100),
-            'cosine_type': 'shifted',
-            'reg_proto_type': 'max',
-            'reg_batch_type': 'max'
-        },
-    },
-}
-
-user_proto_chose_0_reg_hyper_params = {
-    **base_hyper_params,
-    'loss_func_aggr': 'mean',
-    'ft_ext_param': {
-        "ft_type": "prototypes",
-        'embedding_dim': tune.randint(10, 100),
-        'user_ft_ext_param': {
-            "ft_type": "prototypes",
-            'sim_proto_weight': 0,
-            'sim_batch_weight': 0,
-            'use_weight_matrix': False,
-            'n_prototypes': tune.randint(10, 100),
-            'cosine_type': 'shifted',
-        },
-        'item_ft_ext_param': {
-            "ft_type": "embedding",
-        }
-    },
-}
-
-item_proto_chose_0_reg_hyper_params = {
-    **base_hyper_params,
-    'loss_func_aggr': 'mean',
-    'ft_ext_param': {
-        "ft_type": "prototypes",
-        'embedding_dim': tune.randint(10, 100),
-        'item_ft_ext_param': {
-            "ft_type": "prototypes",
-            'sim_proto_weight': 0,
-            'sim_batch_weight': 0,
-            'use_weight_matrix': False,
-            'n_prototypes': tune.randint(10, 100),
-            'cosine_type': 'shifted',
-        },
-        'user_ft_ext_param': {
-            "ft_type": "embedding",
-        }
-    },
-}
-proto_double_tie_chose_0_reg_hyper_params = {
-    **base_hyper_params,
-    'loss_func_aggr': 'mean',
-    'ft_ext_param': {
-        "ft_type": "prototypes_double_tie",
-        'embedding_dim': tune.randint(10, 100),
-        'item_ft_ext_param': {
-            "ft_type": "prototypes_double_tie",
-            'sim_proto_weight': 0,
-            'sim_batch_weight': 0,
-            'use_weight_matrix': False,
-            'n_prototypes': tune.randint(10, 100),
-            'cosine_type': 'shifted',
-        },
-        'user_ft_ext_param': {
-            "ft_type": "prototypes_double_tie",
-            'sim_proto_weight': 0,
-            'sim_batch_weight': 0,
-            'use_weight_matrix': False,
-            'n_prototypes': tune.randint(10, 100),
-            'cosine_type': 'shifted',
-        },
-    },
-}
-
-proto_double_tie_chose_shifted_and_div_hyper_params = {
-    **base_hyper_params,
-    'loss_func_aggr': 'mean',
-    'ft_ext_param': {
-        "ft_type": "prototypes_double_tie",
-        'embedding_dim': tune.randint(10, 100),
-        'item_ft_ext_param': {
-            "ft_type": "prototypes_double_tie",
-            'sim_proto_weight': tune.loguniform(1e-3, 10),
-            'sim_batch_weight': tune.loguniform(1e-3, 10),
-            'use_weight_matrix': False,
-            'n_prototypes': tune.randint(10, 100),
-            'cosine_type': 'shifted_and_div',
-            'reg_proto_type': 'max',
-            'reg_batch_type': 'max'
-        },
-        'user_ft_ext_param': {
-            "ft_type": "prototypes_double_tie",
-            'sim_proto_weight': tune.loguniform(1e-3, 10),
-            'sim_batch_weight': tune.loguniform(1e-3, 10),
-            'use_weight_matrix': False,
-            'n_prototypes': tune.randint(10, 100),
-            'cosine_type': 'shifted_and_div',
-            'reg_proto_type': 'max',
-            'reg_batch_type': 'max'
-        },
-    },
+    'embedding_dim': tune.randint(10, 100)
 }
 
 svd_hyper_param = {
     **base_param,
     'n_factors': tune.randint(10, 100),
 }
+
+knn_hyper_param = {
+    **base_param,
+    'k': tune.lograndint(1, 1000),
+    'sim_func_params': hp.choice('sim_func_name', [
+        {
+            'sim_func_name': 'jaccard'
+        },
+        {
+            'sim_func_name': 'cosine'
+        },
+        {
+            'sim_func_name': 'sorensen_dice'
+        },
+        {
+            'sim_func_name': 'asymmetric_cosine',
+            'alpha': hp.uniform('asymmetric_cosine_alpha', 0, 1)
+        },
+        {
+            'sim_func_name': 'tversky',
+            'alpha': hp.uniform('tversky_alpha', 0, 1),
+            'beta': hp.uniform('tversky_beta', 0, 1)
+        }
+
+    ])
+}
+
+slim_hyper_param = {
+    **base_param,
+    'alpha': tune.loguniform(1e-4, 100),
+    'l1_ratio': tune.loguniform(1e-4, 1),
+    'max_iter': tune.randint(100, 500)
+}
+
 alg_param = {
     RecAlgorithmsEnum.random: base_param,
     RecAlgorithmsEnum.popular: base_param,
-    RecAlgorithmsEnum.svd: svd_hyper_param
+    RecAlgorithmsEnum.svd: svd_hyper_param,
+    RecAlgorithmsEnum.uknn: knn_hyper_param,
+    RecAlgorithmsEnum.iknn: knn_hyper_param,
+    RecAlgorithmsEnum.slim: slim_hyper_param,
+    RecAlgorithmsEnum.sgdmf: sgdmf_hyper_params
 }
