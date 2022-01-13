@@ -150,17 +150,9 @@ def tune_training(conf: dict, checkpoint_dir=None):
 
             # Save
             if to_save:
-                if conf['alg'] == RecAlgorithmsEnum.svd:
-                    np.savez(os.path.join(checkpoint_dir, 'best_model.npz'), users_factors=alg.users_factors,
-                             items_factors=alg.items_factors)
-                elif conf['alg'] in [RecAlgorithmsEnum.uknn, RecAlgorithmsEnum.iknn]:
-                    np.savez(os.path.join(checkpoint_dir, 'best_model.npz'),
-                             pred_mtx=alg.pred_mtx)
-                elif conf['alg'] == RecAlgorithmsEnum.slim:
-                    np.savez(os.path.join(checkpoint_dir, 'best_model.npz'),
-                             pred_mtx=alg.pred_mtx)
+                alg.save_model_to_path(checkpoint_dir)
 
-        return metrics_values
+
     elif conf['alg'] in [RecAlgorithmsEnum.sgdmf]:
         # Training
         alg, expconf = alg
@@ -229,7 +221,6 @@ def run_train_val(conf: dict, run_name: str):
         best_trial = analysis.get_best_trial(metric_name, 'max', scope='all')
         best_config = best_trial.config
         best_checkpoint = analysis.get_best_checkpoint(best_trial, metric_name, 'max')
-        # todo: implement deletion of the other runs (maybe)
 
     return best_config, best_checkpoint
 
@@ -247,30 +238,11 @@ def run_test(run_name: str, best_config: dict, best_checkpoint=None):
     # ---- Test ---- #
     alg = build_algorithm(best_config['alg'], best_config, test_loader)
 
-    if best_config['alg'] in [RecAlgorithmsEnum.random, RecAlgorithmsEnum.popular]:
-        metrics_values = evaluate_recommender_algorithm(alg, test_loader, best_config['seed'])
-        wandb.log(metrics_values)
-    elif best_config['alg'] in [RecAlgorithmsEnum.svd]:
-        best_checkpoint = os.path.join(best_checkpoint, 'best_model.npz')
-        with np.load(best_checkpoint) as array_dict:
-            alg.users_factors = array_dict['users_factors']
-            alg.items_factors = array_dict['items_factors']
-        metrics_values = evaluate_recommender_algorithm(alg, test_loader, best_config['seed'])
-        wandb.log(metrics_values)
-    elif best_config['alg'] in [RecAlgorithmsEnum.uknn, RecAlgorithmsEnum.iknn]:
-        best_checkpoint = os.path.join(best_checkpoint, 'best_model.npz')
-        with np.load(best_checkpoint) as array_dict:
-            alg.pred_mtx = array_dict['pred_mtx']
-        metrics_values = evaluate_recommender_algorithm(alg, test_loader, best_config['seed'])
-        wandb.log(metrics_values)
-    elif best_config['alg'] in [RecAlgorithmsEnum.slim]:
-        with np.load(best_checkpoint) as array_dict:
-            alg.pred_mtx = array_dict['pred_mtx']
-        metrics_values = evaluate_recommender_algorithm(alg, test_loader, best_config['seed'])
-        wandb.log(metrics_values)
-    elif best_config['alg'] in [RecAlgorithmsEnum.sgdmf]:
-        alg, expconf = alg
-        # TODO: TO CONTINUE
+    best_checkpoint = os.path.join(best_checkpoint, 'best_model.npz')
+    alg.load_model_from_path(best_checkpoint)
+    metrics_values = evaluate_recommender_algorithm(alg, test_loader, best_config['seed'])
+    wandb.log(metrics_values)
+    # continue here for sgdmf
     wandb.finish()
 
     return metrics_values

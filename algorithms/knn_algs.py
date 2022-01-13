@@ -53,6 +53,13 @@ class KNNAlgorithm(RecommenderAlgorithm, ABC):
         out = self.pred_mtx[u_idxs[:, None], i_idxs]
         return out
 
+    def save_model_to_path(self, path: str):
+        np.savez(path, pred_mtx=self.pred_mtx)
+
+    def load_model_from_path(self, path: str):
+        with np.load(path) as array_dict:
+            self.pred_mtx = array_dict['pred_mtx']
+
 
 class UserKNN(KNNAlgorithm):
 

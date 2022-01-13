@@ -47,6 +47,14 @@ class SVDAlgorithm(RecommenderAlgorithm):
         self.items_factors = vt.T
         print('End Fitting')
 
+    def save_model_to_path(self, path: str):
+        np.savez(path, users_factors=self.users_factors, items_factors=self.items_factors)
+
+    def load_model_from_path(self, path: str):
+        with np.load(path) as array_dict:
+            self.users_factors = array_dict['users_factors']
+            self.items_factors = array_dict['items_factors']
+
 
 class AlternatingLeastSquare(RecommenderAlgorithm):
     def __init__(self, alpha: int, factors: int, regularization: float, n_iterations: int):

@@ -14,6 +14,7 @@ from utilities.utils import generate_slices
 
 
 class SLIM(RecommenderAlgorithm):
+
     def __init__(self, alpha: float, l1_ratio: float, max_iter: int):
         """
         SLIM: Sparse Linear Methods for Top-N Recommender Systems -  Xia Ning ; George Karypis (https://ieeexplore.ieee.org/document/6137254)
@@ -114,6 +115,13 @@ class SLIM(RecommenderAlgorithm):
     def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union:
         out = self.pred_mtx[u_idxs[:, None], i_idxs]
         return out
+
+    def save_model_to_path(self, path: str):
+        np.savez(path, pred_mtx=self.pred_mtx)
+
+    def load_model_from_path(self, path: str):
+        with np.load(path) as array_dict:
+            self.pred_mtx = array_dict['pred_mtx']
 
 
 class EASE(RecommenderAlgorithm):
