@@ -28,6 +28,18 @@ class RecommenderAlgorithm(ABC):
         :return preds: predictions. Shape is (batch_size, n_neg + 1)
         """
 
+    @abstractmethod
+    def save_model_to_path(self, path: str):
+        """
+        Saves the necessary data to reconstruct this class to a specified path
+        """
+
+    @abstractmethod
+    def load_model_from_path(self, path: str):
+        """
+        Load the necessary data to reconstruct a previous model from a specified path
+        """
+
 
 class SGDBasedRecommenderAlgorithm(RecommenderAlgorithm, ABC, nn.Module):
     """

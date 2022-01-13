@@ -18,6 +18,12 @@ class RandomItems(RecommenderAlgorithm):
         out = torch.rand(i_idxs.shape)
         return out
 
+    def save_model_to_path(self, path: str):
+        pass
+
+    def load_model_from_path(self, path: str):
+        pass
+
 
 class PopularItems(RecommenderAlgorithm):
 
@@ -34,3 +40,9 @@ class PopularItems(RecommenderAlgorithm):
     def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union[np.ndarray, torch.Tensor]:
         out = self.pop_distribution[i_idxs]
         return out
+
+    def save_model_to_path(self, path: str):
+        pass
+
+    def load_model_from_path(self, path: str):
+        pass
