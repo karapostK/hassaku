@@ -1,3 +1,4 @@
+import functools
 import json
 import pickle
 import random
@@ -93,3 +94,18 @@ def generate_slices(total_columns):
         now = end
 
     return ranges
+
+
+class FunctionWrapper:
+    """
+    Since functions are not properly recognized as enum items, we need to use a wrapper function.
+    """
+    def __init__(self, function):
+        self.function = function
+        functools.update_wrapper(self, function)
+
+    def __call__(self, *args, **kwargs):
+        return self.function(*args, **kwargs)
+
+    def __repr__(self):
+        return self.function.__repr__()

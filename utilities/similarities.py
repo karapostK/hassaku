@@ -5,6 +5,8 @@ import scipy as sc
 from scipy import sparse as sp
 from scipy.sparse import linalg as sp_linalg
 
+from utilities.utils import FunctionWrapper
+
 
 def compute_jaccard_sim_mtx(matrix):
     jaccard_sim_mtx = (matrix @ matrix.T)
@@ -93,11 +95,10 @@ def compute_tversky_sim_mtx(alpha, beta, matrix):
     return tversky_sim_mtx
 
 
-class SimilarityFunction(Enum):
-    #todo: the enum functionality is not used at all
-    jaccard = compute_jaccard_sim_mtx
-    cosine = compute_cosine_sim_mtx
-    pearson = compute_pearson_sim_mtx
-    asymmetric_cosine = compute_asymmetric_cosine_sim_mtx
-    tversky = compute_tversky_sim_mtx
-    sorensen_dice = compute_sorensen_dice_sim_mtx
+class SimilarityFunctionEnum(Enum):
+    jaccard = FunctionWrapper(compute_jaccard_sim_mtx)
+    cosine = FunctionWrapper(compute_cosine_sim_mtx)
+    pearson = FunctionWrapper(compute_pearson_sim_mtx)
+    asymmetric_cosine = FunctionWrapper(compute_asymmetric_cosine_sim_mtx)
+    tversky = FunctionWrapper(compute_tversky_sim_mtx)
+    sorensen_dice = FunctionWrapper(compute_sorensen_dice_sim_mtx)
