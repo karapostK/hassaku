@@ -6,25 +6,27 @@ import numpy as np
 import torch
 from scipy import sparse as sp
 
-from base_classes import RecommenderAlgorithm
-from utilities.similarities import SimilarityFunction
+from algorithms.base_classes import RecommenderAlgorithm
+from utilities.similarities import SimilarityFunctionEnum
 
 
 class KNNAlgorithm(RecommenderAlgorithm, ABC):
 
-    def __init__(self, sim_func: SimilarityFunction = SimilarityFunction.cosine, k: int = 100, **kwargs):
+    def __init__(self, sim_func_enum: SimilarityFunctionEnum = SimilarityFunctionEnum.cosine, k: int = 100, **kwargs):
         """
         Abstract class for K-nearest neighbours
-        :param sim_func: similarity function to use
+        :param sim_func_enum: similarity function to use
         :param k: number of k nearest neighbours to consider
         :param kwargs: additional parameters for the similarity function (e.g. alpha for asymmetric cosine)
         """
         super().__init__()
 
-        self.sim_func = sim_func
-        if self.sim_func == SimilarityFunction.asymmetric_cosine:
+        self.sim_func_enum = sim_func_enum
+        self.sim_func = sim_func_enum.value
+
+        if self.sim_func_enum == SimilarityFunctionEnum.asymmetric_cosine:
             self.sim_func = partial(self.sim_func, kwargs['alpha'])
-        elif self.sim_func == SimilarityFunction.tversky:
+        elif self.sim_func_enum == SimilarityFunctionEnum.tversky:
             self.sim_func = partial(self.sim_func, kwargs['alpha'], kwargs['beta'])
 
         self.k = k
@@ -46,13 +48,15 @@ class KNNAlgorithm(RecommenderAlgorithm, ABC):
 
     def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union:
         assert self.pred_mtx is not None, 'Prediction Matrix not computed, run fit!'
+        if sp.issparse(self.pred_mtx):
+            self.pred_mtx = self.pred_mtx.toarray()  # Not elegant but it simplifies the following code
         out = self.pred_mtx[u_idxs[:, None], i_idxs]
         return out
 
 
 class UserKNN(KNNAlgorithm):
 
-    def __init__(self, sim_func: SimilarityFunction = SimilarityFunction.cosine, k: int = 100, **kwargs):
+    def __init__(self, sim_func: SimilarityFunctionEnum = SimilarityFunctionEnum.cosine, k: int = 100, **kwargs):
         super().__init__(sim_func, k, **kwargs)
         self.name = 'UserKNN'
         print(f'Built {self.name} module \n')
@@ -66,13 +70,12 @@ class UserKNN(KNNAlgorithm):
         sim_mtx = take_only_top_k(self.sim_func(matrix), k=self.k)
 
         self.pred_mtx = sim_mtx @ matrix
-        self.pred_mtx = self.pred_mtx.toarray()  # Not elegant but materializing the whole matrix makes the rest of the code easier to write/read
         print('End Fitting')
 
 
 class ItemKNN(KNNAlgorithm):
 
-    def __init__(self, sim_func: SimilarityFunction = SimilarityFunction.cosine, k: int = 100, **kwargs):
+    def __init__(self, sim_func: SimilarityFunctionEnum = SimilarityFunctionEnum.cosine, k: int = 100, **kwargs):
         super().__init__(sim_func, k, **kwargs)
         self.name = 'ItemKNN'
         print(f'Built {self.name} module \n')
@@ -86,7 +89,7 @@ class ItemKNN(KNNAlgorithm):
         sim_mtx = take_only_top_k(self.sim_func(matrix.T), k=self.k)
 
         self.pred_mtx = matrix @ sim_mtx.T
-        self.pred_mtx = self.pred_mtx.toarray()  # Not elegant but materializing the whole matrix makes the rest of the code easier to write/read
+
         print('End Fitting')
 
 

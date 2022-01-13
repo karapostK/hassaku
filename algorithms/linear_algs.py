@@ -9,7 +9,7 @@ from scipy import sparse as sp
 from sklearn.linear_model import ElasticNet
 from tqdm import trange
 
-from base_classes import RecommenderAlgorithm
+from algorithms.base_classes import RecommenderAlgorithm
 from utilities.utils import generate_slices
 
 

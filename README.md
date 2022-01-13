@@ -11,8 +11,8 @@ This repository contains some of the algorithms that have been proposed in the f
 | Popular                                                                                                                        | X            | X         |
 | SVD                                                                                                                            | X            | X         |
 | User KNN (and variants)                                                                                                        | X            | X         |
-| Item KNN (and variants)                                                                                                        | X            |           |
-| [SLIM](https://dl.acm.org/doi/10.1109/ICDM.2011.134)                                                                           | X            |           |
+| Item KNN (and variants)                                                                                                        | X            | X         |
+| [SLIM](https://dl.acm.org/doi/10.1109/ICDM.2011.134)                                                                           | X            | X         |
 | [EASE](https://dl.acm.org/doi/10.1145/3308558.3313710)                                                                         | X            |           |
 | [Deep Matrix Factorization](https://www.ijcai.org/Proceedings/2017/0447.pdf)                                                   | X            | X         |
 | [P3α](https://dl.acm.org/doi/abs/10.1145/2567948.2579244)                                                                      | X            | X         |

@@ -1,3 +1,4 @@
+import abc
 import os
 
 import numpy as np
@@ -7,45 +8,45 @@ from torch.utils import data
 from torch.utils.data.dataset import T_co
 
 
-class RecDataset(data.Dataset):
+class RecDataset(data.Dataset, abc.ABC):
     """
-    This class is used to encapsulate a generic dataset of user x item interactions. The class is tailored for a
-    user-based leave-one-out split where:
-        - user-based means that for each user we withold part of the interactions as training, part as validation, and part as testing
-        - leave-one-out means that one interaction is used as testing, another one for validation, and the rest of the data for training
-    Even though it is not required by the code, the class has been used for time-sorted interactions in the leave-one-out strategy (
-    a.k.a. the last iteraction is used for testing, the one before for validation, and the rest for training).
+       This class is used to encapsulate a generic dataset of user x item interactions. The class is tailored for a
+       user-based leave-one-out split where:
+           - user-based means that for each user we withold part of the interactions as training, part as validation, and part as testing
+           - leave-one-out means that one interaction is used as testing, another one for validation, and the rest of the data for training
+       Even though it is not required by the code, the class has been used for time-sorted interactions in the leave-one-out strategy (
+       a.k.a. the last interaction is used for testing, the one before for validation, and the rest for training).
 
-   To use this class for any dataset, please check how data should be split according to the pre-existing splitter functions (e.g. movielens_splitter.py)
+      To use this class for any dataset, please check how data should be split according to the pre-existing splitter functions (e.g. movielens_splitter.py)
 
-    This class implements some basic functionalities about negative sampling. The negative sampling for a specific user
-    is influenced by the split_set:
-        - split_set = train: The other training items are excluded from the sampling.
-        - split_set = val: The other validation items and training items are excluded from the sampling.
-        - split_set = test: The other test items and training items are excluded from the sampling.
+       This class implements some basic functionalities about negative sampling. The negative sampling for a specific user
+       is influenced by the split_set:
+           - split_set = train: The other training items are excluded from the sampling.
+           - split_set = val: The other validation items and training items are excluded from the sampling.
+           - split_set = test: The other test items and training items are excluded from the sampling.
 
-    About the data management and access:
-    To perform a fast iteration and sampling over the dataset, we use two sparse matrices (COO and CSR). The COO
-    is used for iteration over the training data while the CSR for fast negative sampling. We always load the train
-    CSR since it is used to exclude the training data from the negative sampling also for Validation and Testing.
-    NB. Depending on the split_set, the matrices may have different data. Train COO and Train CSR have always the
-    same data. However, Val CSR has Val + Train data (same applies for test). This is due to the negative sampling
-    in the csr matrix, for which we also exclude items from training (see below).
-    """
+       About the data management and access:
+       To perform a fast iteration and sampling over the dataset, we use two sparse matrices called here the iteration
+       (e.g. COO) and sampling matrix (e.g CSR). The iteration matrix is used for iteration over the training data while
+       sampling matrix for fast negative sampling. Regardless of the split_set, we always load the train data and put it
+       in the sampling matrix since training data is always excluded when carrying out negative sampling also for
+       Validation and Testing. Depending on the split_set, the matrices may have different data. Train iteration and
+       Train sampling have always the same data. However, Val sampling has Val + Train data (same applies for test).
+       """
 
-    def __init__(self, data_path: str, split_set: str, n_neg: int, neg_strategy: str = 'uniform'):
+    def __init__(self, data_path: str, split_set: str, neg_sampling_strategy: str = 'uniform'):
         """
         :param data_path: path to the directory with the listening_history_*, item_ids, and user_ids files.
         :param split_set: Value in [train, val, test].
-        :param n_neg: Number of negative samples.
-        :param neg_strategy: Strategy to select the negative samples.
+        :param neg_sampling_strategy: Strategy to sample the negatives for each user.
         """
         assert split_set in ['train', 'val', 'test'], f'<{split_set}> is not a valid value for split set!'
+        assert neg_sampling_strategy in ['uniform',
+                                         'popular'], f'<{neg_sampling_strategy}> is not a valid negative sampling strategy!'
 
         self.data_path = data_path
         self.split_set = split_set
-        self.n_neg = n_neg
-        self.neg_strategy = neg_strategy
+        self.neg_sampling_strategy = neg_sampling_strategy
 
         self.n_users = None
         self.n_items = None
@@ -54,6 +55,7 @@ class RecDataset(data.Dataset):
 
         self.iteration_matrix = None
         self.sampling_matrix = None
+        self.neg_sampler = self._neg_sample_uniform if self.neg_sampling_strategy == 'uniform' else self._neg_sample_popular
 
         self.pop_distribution = None
 
@@ -65,8 +67,7 @@ class RecDataset(data.Dataset):
               f'- n_items: {self.n_items} \n'
               f'- n_interactions: {self.iteration_matrix.nnz} \n'
               f'- split_set: {self.split_set} \n'
-              f'- n_neg: {self.n_neg} \n'
-              f'- neg_strategy: {self.neg_strategy} \n')
+              f'- neg_sampling_strategy: {self.neg_sampling_strategy} \n')
 
     def load_data(self):
         print('Loading data')
@@ -117,42 +118,62 @@ class RecDataset(data.Dataset):
             self.iteration_matrix = train_coo
             self.sampling_matrix = train_csr
 
-    def _neg_sample_uniform(self, row_idx: int) -> np.array:
+        print('End loading data')
+
+    def _neg_sample_uniform(self, row_idx: int, n_neg: int) -> np.array:
         """
         For a specific user, it samples n_neg items u.a.r.
         :param row_idx: user id (or row in the matrix)
+        :param n_neg: number of negative samples
         :return: npy array containing the negatively sampled items.
         """
 
-        consumed_items = self.sampling_matrix.indices[
-                         self.sampling_matrix.indptr[row_idx]:self.sampling_matrix.indptr[row_idx + 1]]
+        consumed_items = self.sampling_matrix[row_idx].indices
 
         # Uniform distribution without items consumed by the user
         p = np.ones(self.n_items)
         p[consumed_items] = 0.  # Excluding consumed items
         p = p / p.sum()
 
-        sampled = np.random.choice(np.arange(self.n_items), self.n_neg, replace=False, p=p)
+        sampled = np.random.choice(np.arange(self.n_items), n_neg, replace=False, p=p)
 
         return sampled
 
-    def _neg_sample_popular(self, row_idx: int) -> np.array:
+    def _neg_sample_popular(self, row_idx: int, n_neg: int, squashing_factor=.75) -> np.array:
         """
         For a specific user, it samples n_neg items considering the frequency of appearance of items in the dataset, i.e.
         p(i being neg) ∝ (pop_i)^0.75.
         :param row_idx: user id (or row in the matrix)
+        :param n_neg: number of negative samples
         :return: npy array containing the negatively sampled items.
         """
-        consumed_items = self.sampling_matrix.indices[
-                         self.sampling_matrix.indptr[row_idx]:self.sampling_matrix.indptr[row_idx + 1]]
+        consumed_items = self.sampling_matrix[row_idx].indices
 
         p = self.pop_distribution.copy()
         p[consumed_items] = 0.  # Excluding consumed items
-        p = np.power(p, .75)  # Squashing factor alpha = .75
+        p = np.power(p, squashing_factor)  # Applying squashing factor alpha
         p = p / p.sum()
 
-        sampled = np.random.choice(np.arange(self.n_items), self.n_neg, replace=False, p=p)
+        sampled = np.random.choice(np.arange(self.n_items), n_neg, replace=False, p=p)
         return sampled
+
+
+class InterRecDataset(RecDataset):
+    """
+    Dataset used to traverse the user x item interaction by single interactions
+    """
+
+    def __init__(self, data_path: str, split_set: str, n_neg: int, neg_sampling_strategy: str = 'uniform'):
+        """
+        :param data_path,split_set,neg_sampling_strategy: see RecDataset
+        :param n_neg: Number of negative samples.
+        """
+        super().__init__(data_path, split_set, neg_sampling_strategy)
+
+        self.n_neg = n_neg
+
+        print(f'Built InterRecDataset module \n'
+              f'- n_neg: {self.n_neg} \n')
 
     def __len__(self) -> int:
         return self.iteration_matrix.nnz
@@ -166,19 +187,13 @@ class RecDataset(data.Dataset):
             item_idxs: is a npy array containing the items indexes. The positive item is in the 1st position followed
                         by the negative items indexes. Shape is (1 + n_neg,)
             labels: npy array containing the labels. First position is 1, the others are 0. Shape is (1 + n_neg,).
-
         """
 
         user_idx = self.iteration_matrix.row[index].astype('int64')
         item_idx_pos = self.iteration_matrix.col[index]
 
-        # Select the correct negative sampling strategy
-        if self.neg_strategy == 'uniform':
-            neg_samples = self._neg_sample_uniform(user_idx)
-        elif self.neg_strategy == 'popular':
-            neg_samples = self._neg_sample_popular(user_idx)
-        else:
-            raise ValueError(f'Negative Sampling Strategy <{self.neg_strategy}> not implemented ... Yet')
+        # Negative sampling
+        neg_samples = self.neg_sampler(user_idx, self.n_neg)
 
         item_idxs = np.concatenate(([item_idx_pos], neg_samples)).astype('int64')
 
@@ -189,39 +204,58 @@ class RecDataset(data.Dataset):
 
 
 class UserRecDataset(RecDataset):
+    """
+    Dataset used to traverse the user x item interaction by users. For each user, it returns n_pos positive instances
+    and n_neg positive instances.
+    """
 
     def __init__(self, data_path: str, split_set: str, pos_strategy: str = 'n_pos', neg_strategy: str = 'ratio',
-                 n_pos: int = 100, ro: int = None, n_neg: int = None):
-        """
-        This class iterates over the dataset user-wise. For each user, the class return n_pos positive instances and n_neg instances.
-        """
+                 neg_sampling_strategy='uniform', n_pos: int = 100, n_neg: int = None, neg_pos_ratio: int = 3):
+
         assert pos_strategy in ['n_pos', 'all'], f'Strategy for sampling positive ({pos_strategy}) not implemented'
-        assert neg_strategy in ['n_neg', 'ratio',
-                                'all'], f'Strategy for sampling negative ({neg_strategy}) not implemented'
+        assert neg_strategy in ['n_neg', 'ratio'], f'Strategy for sampling negative ({neg_strategy}) not implemented'
 
         if pos_strategy == 'n_pos':
             assert n_pos >= 0, f'Value for n_pos ({n_pos}) not valid'
         if neg_strategy == 'n_neg':
             assert n_neg >= 0, f'Value for n_neg ({n_neg}) not valid'
         elif neg_strategy == 'ratio':
-            assert ro is not None and ro >= 0, f'Value for ro ({ro}) not valid'
+            assert neg_pos_ratio >= 0, f'Value for neg_pos_ratio ({neg_pos_ratio}) not valid'
 
-        super().__init__(data_path, split_set, 0)  # todo: tbh this only is used to load the data
+        super().__init__(data_path, split_set, neg_sampling_strategy)
 
         self.pos_strategy = pos_strategy
         self.neg_strategy = neg_strategy
         self.n_pos = n_pos
-        self.ro = ro
         self.n_neg = n_neg
+        self.neg_pos_ratio = neg_pos_ratio
 
         self.iteration_matrix = sp.csr_matrix(self.iteration_matrix)
+
+        print(f'Built UserRecDataset module \n'
+              f'- pos_strategy: {self.pos_strategy} \n'
+              f'- neg_strategy: {self.neg_strategy} \n'
+              f'- n_pos: {self.n_pos} \n'
+              f'- n_neg: {self.n_neg} \n'
+              f'- neg_pos_ratio: {self.neg_pos_ratio} \n')
 
     def __len__(self):
         return self.n_users
 
     def __getitem__(self, user_index) -> T_co:
 
+        """
+        Loads the user's interactions associated to the user index.
+        :param user_index: user_index (as defined by the CSR matrix)
+        :return: (user_idx,item_idxs,labels) where
+            user_idx: is the index of the user
+            item_idxs: is a npy array containing the items indexes. The positive items are in the 1st position followed
+                        by the negative items indexes. Shape is (n_pos + n_neg,)
+            labels: npy array containing the labels. First n_pos positions are 1, the others are 0. Shape is (n_pos + n_neg,).
+        """
+
         # Sampling positives
+
         user_include_items = self.iteration_matrix[user_index].indices
 
         if self.pos_strategy == 'all' or (self.pos_strategy == 'n_pos' and self.n_pos >= len(user_include_items)):
@@ -233,22 +267,10 @@ class UserRecDataset(RecDataset):
         n_pos_items = len(pos_items)
 
         # Sampling negatives
-        mask_neg = np.ones(self.n_items, dtype=bool)
-        user_exclude_items = self.sampling_matrix[user_index].indices
-        mask_neg[user_exclude_items] = False
-        all_negative_items = np.arange(self.n_items)[mask_neg]
-
-        n_items_left = len(all_negative_items)
-
-        if self.neg_strategy == 'all' or (self.neg_strategy == 'n_neg' and self.n_neg >= n_items_left) or (
-                self.neg_strategy == 'ratio' and n_pos_items * self.ro >= n_items_left):
-            # Take all the negatives
-            neg_items = all_negative_items.copy()
-            np.random.shuffle(neg_items)
-        elif self.neg_strategy == 'n_neg':
-            neg_items = np.random.choice(all_negative_items, self.n_neg, replace=False)
+        if self.neg_strategy == 'n_neg':
+            neg_items = self.neg_sampler(user_index, self.n_neg)
         else:
-            neg_items = np.random.choice(all_negative_items, n_pos_items * self.ro, replace=False)
+            neg_items = self.neg_sampler(user_index, n_pos_items * self.neg_pos_ratio)
 
         # Concatenating
 
@@ -262,29 +284,23 @@ class UserRecDataset(RecDataset):
         return user_index, items, labels
 
 
-def get_recdataset_dataloader(data_path: str, split_set: str, n_neg: int, neg_strategy='uniform',
+def get_recdataset_dataloader(dataset_type: str, data_path: str, split_set: str, neg_sampling_strategy='uniform',
+                              n_neg: int = None, pos_strategy: str = 'n_pos', neg_strategy: str = 'n_neg',
+                              n_pos: int = None, neg_pos_ratio: int = None,
                               **loader_params) -> data.DataLoader:
     """
     Returns the dataloader for a RecDataset
-    :param data_path, ... ,neg_strategy: check RecDataset class for info about these parameters
+    :param dataset_type: one the subclasses of RecDataset. Should be in ['user', 'inter']
+    :param data_path, ... ,neg_strategy: check RecDataset class and subclasses for info about these parameters
     :param loader_params: parameters for the Dataloader
     :return:
     """
-    recdataset = RecDataset(data_path, split_set, n_neg, neg_strategy)
+    assert dataset_type in ['inter', 'user'], f'Type of the dataset ({dataset_type}) is not valid'
+
+    if dataset_type == 'user':
+        recdataset = UserRecDataset(data_path, split_set, pos_strategy, neg_strategy, neg_sampling_strategy, n_pos,
+                                    n_neg, neg_pos_ratio)
+    else:
+        recdataset = InterRecDataset(data_path, split_set, n_neg, neg_sampling_strategy)
 
     return data.DataLoader(recdataset, **loader_params)
-
-
-def get_userrecdataset_dataloader(data_path: str, split_set: str, pos_strategy: str = 'n_pos',
-                                  neg_strategy: str = 'ratio',
-                                  n_pos: int = 100, ro: int = None, n_neg: int = None,
-                                  **loader_params) -> data.DataLoader:
-    """
-    Returns the dataloader for a UserRecDataset
-    :param data_path, ... ,n_neg: check UserRecDataset class for info about these parameters
-    :param loader_params: parameters for the Dataloader
-    :return:
-    """
-    userrecdataset = UserRecDataset(data_path, split_set, pos_strategy, neg_strategy, n_pos, ro, n_neg)
-
-    return data.DataLoader(userrecdataset, **loader_params)

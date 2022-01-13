@@ -6,7 +6,7 @@ import torch
 from scipy import sparse as sp
 from scipy.sparse.linalg import svds
 
-from base_classes import RecommenderAlgorithm
+from algorithms.base_classes import RecommenderAlgorithm
 
 
 class SVDAlgorithm(RecommenderAlgorithm):

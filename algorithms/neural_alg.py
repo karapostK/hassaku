@@ -4,7 +4,7 @@ import torch
 from scipy import sparse as sp
 from torch import nn
 
-from base_classes import SGDBasedRecommenderAlgorithm
+from algorithms.base_classes import SGDBasedRecommenderAlgorithm
 from utilities.utils import general_weight_init
 
 
