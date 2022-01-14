@@ -93,8 +93,9 @@ class AlternatingLeastSquare(RecommenderAlgorithm):
                                                    use_gpu=use_gpu,
                                                    num_threads=10)
         als.fit(self.alpha * matrix)
-        self.items_factors = als.item_factors
-        self.users_factors = als.user_factors
+
+        self.items_factors = als.item_factors.to_numpy()
+        self.users_factors = als.user_factors.to_numpy()
         print('End Fitting')
 
     def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union[np.ndarray, torch.Tensor]:
@@ -106,3 +107,11 @@ class AlternatingLeastSquare(RecommenderAlgorithm):
         out = (batch_items * batch_users[:, None, :]).sum(axis=-1)  # Carrying out the dot product
 
         return out
+
+    def save_model_to_path(self, path: str):
+        np.savez(path, users_factors=self.users_factors, items_factors=self.items_factors)
+
+    def load_model_from_path(self, path: str):
+        with np.load(path) as array_dict:
+            self.users_factors = array_dict['users_factors']
+            self.items_factors = array_dict['items_factors']

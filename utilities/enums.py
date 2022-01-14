@@ -3,7 +3,7 @@ from enum import Enum
 
 from algorithms.knn_algs import UserKNN, ItemKNN
 from algorithms.linear_algs import SLIM
-from algorithms.mf_algs import SVDAlgorithm
+from algorithms.mf_algs import SVDAlgorithm, AlternatingLeastSquare
 from algorithms.naive_algs import RandomItems, PopularItems
 from algorithms.neural_alg import SGDMatrixFactorization
 
@@ -16,6 +16,7 @@ class RecAlgorithmsEnum(Enum):
     iknn = ItemKNN
     slim = SLIM
     sgdmf = SGDMatrixFactorization
+    als = AlternatingLeastSquare
 
 
 class RecDatasetsEnum(Enum):

@@ -81,6 +81,8 @@ def build_algorithm(alg: RecAlgorithmsEnum, conf: dict, dataloader):
             return RecAlgorithmsEnum.iknn.value(sim_func, k, alpha=alpha, beta=beta)
     elif alg == RecAlgorithmsEnum.slim:
         return RecAlgorithmsEnum.slim.value(conf['alpha'], conf['l1_ratio'], conf['max_iter'])
+    elif alg == RecAlgorithmsEnum.als:
+        return RecAlgorithmsEnum.als.value(conf['alpha'], conf['factors'], conf['regularization'], conf['n_iterations'])
     elif alg in [RecAlgorithmsEnum.sgdmf]:
         # Need to build the trainer
         exp_conf = ExperimentConfig(n_epochs=conf['n_epochs'],
@@ -104,7 +106,8 @@ def tune_training(conf: dict, checkpoint_dir=None):
 
     alg = build_algorithm(conf['alg'], conf, train_loader)
 
-    if conf['alg'] in [RecAlgorithmsEnum.svd, RecAlgorithmsEnum.uknn, RecAlgorithmsEnum.iknn, RecAlgorithmsEnum.slim]:
+    if conf['alg'] in [RecAlgorithmsEnum.svd, RecAlgorithmsEnum.uknn, RecAlgorithmsEnum.iknn, RecAlgorithmsEnum.slim,
+                       RecAlgorithmsEnum.als]:
         # -- Training --
         alg.fit(train_loader.dataset.iteration_matrix)
         # -- Validation --
@@ -117,6 +120,7 @@ def tune_training(conf: dict, checkpoint_dir=None):
         run_metric = metrics_values[OPTIMIZING_METRIC]
         to_save = False
         with tune.checkpoint_dir(0) as checkpoint_dir:
+            checkpoint_dir = os.path.join(checkpoint_dir, 'best_model.npz')
             with FileLock('../file.lock'):
                 sync_file_path = '../sync_data.json'
                 # Create file if not there the first time
@@ -151,7 +155,6 @@ def tune_training(conf: dict, checkpoint_dir=None):
             # Save
             if to_save:
                 alg.save_model_to_path(checkpoint_dir)
-
 
     elif conf['alg'] in [RecAlgorithmsEnum.sgdmf]:
         # Training
@@ -208,14 +211,14 @@ def run_train_val(conf: dict, run_name: str):
             run_name,
             config=conf,
             name=generate_id(prefix=run_name),
-            resources_per_trial={'gpu': 0, 'cpu': 1},
+            resources_per_trial={'gpu': 0.2, 'cpu': 1},
             scheduler=scheduler,
             search_alg=search_alg,
             num_samples=NUM_SAMPLES,
             callbacks=[callback],
             metric=metric_name,
             stop=stopper,
-            max_concurrent_trials=5,
+            max_concurrent_trials=6,
             mode='max'
         )
         best_trial = analysis.get_best_trial(metric_name, 'max', scope='all')

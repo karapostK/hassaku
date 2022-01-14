@@ -16,7 +16,8 @@ base_hyper_params = {
     **base_param,
     'neg_train': tune.randint(1, 50),
     'train_neg_strategy': tune.choice(['popular', 'uniform']),
-    'rec_loss': tune.choice([RecommenderSystemLossesEnum.bce,RecommenderSystemLossesEnum.bpr,RecommenderSystemLossesEnum.sampled_softmax]),
+    'rec_loss': tune.choice([RecommenderSystemLossesEnum.bce, RecommenderSystemLossesEnum.bpr,
+                             RecommenderSystemLossesEnum.sampled_softmax]),
     'batch_size': tune.lograndint(64, 512, 2),
     'optim_param': {
         'optim': tune.choice(['adam', 'adagrad']),
@@ -68,6 +69,14 @@ slim_hyper_param = {
     'max_iter': tune.randint(100, 500)
 }
 
+als_hyper_param = {
+    **base_param,
+    'alpha': tune.randint(1, 100),
+    'factors': tune.randint(10, 100),
+    'regularization': tune.loguniform(1e-4, 1e-1),
+    'n_iterations': tune.randint(100, 1000)
+}
+
 alg_param = {
     RecAlgorithmsEnum.random: base_param,
     RecAlgorithmsEnum.popular: base_param,
@@ -75,5 +84,6 @@ alg_param = {
     RecAlgorithmsEnum.uknn: knn_hyper_param,
     RecAlgorithmsEnum.iknn: knn_hyper_param,
     RecAlgorithmsEnum.slim: slim_hyper_param,
-    RecAlgorithmsEnum.sgdmf: sgdmf_hyper_params
+    RecAlgorithmsEnum.sgdmf: sgdmf_hyper_params,
+    RecAlgorithmsEnum.als: als_hyper_param
 }
