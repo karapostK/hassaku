@@ -11,7 +11,6 @@ from ray.tune.stopper import TrialPlateauStopper
 from ray.tune.suggest.hyperopt import HyperOptSearch
 
 import wandb
-from algorithms.neural_alg import SGDMatrixFactorization
 from data.dataset import get_recdataset_dataloader
 from hyper_params import alg_param
 from utilities.consts import NEG_VAL, SINGLE_SEED, PROJECT_NAME, WANDB_API_KEY_PATH, DATA_PATH, OPTIMIZING_METRIC, \
@@ -84,15 +83,66 @@ def build_algorithm(alg: RecAlgorithmsEnum, conf: dict, dataloader):
     elif alg == RecAlgorithmsEnum.als:
         return RecAlgorithmsEnum.als.value(conf['alpha'], conf['factors'], conf['regularization'], conf['n_iterations'])
     elif alg in [RecAlgorithmsEnum.sgdmf]:
-        # Need to build the trainer
-        exp_conf = ExperimentConfig(n_epochs=conf['n_epochs'],
-                                    rec_loss=conf['rec_loss'].value(),
-                                    lr=conf['optim_param']['lr'],
-                                    wd=conf['optim_param']['wd'],
-                                    optim_type=conf['optim_param']['optim'],
-                                    )
-        alg = SGDMatrixFactorization(dataloader.dataset.n_users, dataloader.dataset.n_items, conf['embedding_dim'])
-        return alg, exp_conf
+        # Need to build the config for the trainer
+
+        if dataloader.dataset.split_set == 'train':
+            exp_conf = ExperimentConfig(n_epochs=conf['n_epochs'],
+                                        rec_loss=conf['rec_loss'].value(),
+                                        lr=conf['optim_param']['lr'],
+                                        wd=conf['optim_param']['wd'],
+                                        optim_type=conf['optim_param']['optim'],
+                                        )
+            alg = RecAlgorithmsEnum.sgdmf.value(dataloader.dataset.n_users, dataloader.dataset.n_items,
+                                                conf['embedding_dim'])
+            return alg, exp_conf
+        else:
+            alg = RecAlgorithmsEnum.sgdmf.value(dataloader.dataset.n_users, dataloader.dataset.n_items,
+                                                conf['embedding_dim'])
+            return alg
+
+
+def check_whether_to_save(run_metric: float, checkpoint_dir: str) -> bool:
+    """
+    This function manages the saving of the found models by saving only the top-3 best models for a specific algorithm.
+    This avoids saving all NUM_SAMPLES configurations of models.
+    If the trial becomes part of the top-3, it deletes the model with the current smallest metric value among the top-3. Return to_save=True
+    If the trial does not become part of the top-3, do nothing and return to_save=False
+    :param run_metric: the metric of the current trial which will be used to check whether we save the model or not
+    :param checkpoint_dir: the path pointing at the model
+    :return: boolean value indicating whether to save the current model
+    """
+
+    with FileLock('../file.lock'):
+        sync_file_path = '../sync_data.json'
+        # Create file if not there the first time
+        if not os.path.isfile(sync_file_path):
+            with open(sync_file_path, 'w') as out_file:
+                json.dump({'paths': [''] * 3, 'values': [-np.inf] * 3}, out_file)
+        # Read the file used for synchronization
+        with open(sync_file_path, 'r') as in_file:
+            sync_data = json.load(in_file)
+            top_paths = sync_data['paths']
+            top_values = sync_data['values']
+
+            # Compare the current trial with the trial that has the minimum metric value within the top-3
+            argmin = np.argmin(top_values)
+            if top_values[argmin] < run_metric:
+                # Save
+                print('--- Run saved ---', top_values, run_metric)
+
+                # Delete previous trial
+                old_path = top_paths[argmin]
+                if os.path.isdir(old_path):
+                    shutil.rmtree(old_path)
+
+                top_values[argmin] = run_metric
+                top_paths[argmin] = checkpoint_dir
+
+                with open(sync_file_path, 'w') as out_file:
+                    json.dump({'paths': top_paths, 'values': top_values}, out_file)
+                return True
+            else:
+                return False
 
 
 def tune_training(conf: dict, checkpoint_dir=None):
@@ -110,47 +160,18 @@ def tune_training(conf: dict, checkpoint_dir=None):
                        RecAlgorithmsEnum.als]:
         # -- Training --
         alg.fit(train_loader.dataset.iteration_matrix)
+
         # -- Validation --
         metrics_values = evaluate_recommender_algorithm(alg, val_loader, conf['seed'])
         tune.report(**metrics_values)
 
         # -- Save --
-        # We only keep the top-3 best performing models. Each trial saves the model if it is currently one of the best three.
-        # When a trial becomes one of the top-3, it deletes the saved model of the trial with the current smallest metric value in the top-3.
         run_metric = metrics_values[OPTIMIZING_METRIC]
-        to_save = False
+
         with tune.checkpoint_dir(0) as checkpoint_dir:
+
             checkpoint_dir = os.path.join(checkpoint_dir, 'best_model.npz')
-            with FileLock('../file.lock'):
-                sync_file_path = '../sync_data.json'
-                # Create file if not there the first time
-                if not os.path.isfile(sync_file_path):
-                    with open(sync_file_path, 'w') as out_file:
-                        json.dump({'paths': [''] * 3, 'values': [-np.inf] * 3}, out_file)
-                # Read the file used for synchronization
-                with open(sync_file_path, 'r') as in_file:
-                    sync_data = json.load(in_file)
-                    top_paths = sync_data['paths']
-                    top_values = sync_data['values']
-
-                    # Compare the current trial with the trial that has the minimum metric value within the top-3
-                    argmin = np.argmin(top_values)
-                    if top_values[argmin] < run_metric:
-                        # Save
-                        print('--- Run saved ---', top_values, run_metric)
-
-                        to_save = True
-
-                        # Delete previous trial
-                        old_path = top_paths[argmin]
-                        if os.path.isdir(old_path):
-                            shutil.rmtree(old_path)
-
-                        top_values[argmin] = run_metric
-                        top_paths[argmin] = checkpoint_dir
-
-                        with open(sync_file_path, 'w') as out_file:
-                            json.dump({'paths': top_paths, 'values': top_values}, out_file)
+            to_save = check_whether_to_save(run_metric, checkpoint_dir)
 
             # Save
             if to_save:
@@ -158,10 +179,17 @@ def tune_training(conf: dict, checkpoint_dir=None):
 
     elif conf['alg'] in [RecAlgorithmsEnum.sgdmf]:
         # Training
-        alg, expconf = alg
-        trainer = Trainer(alg, train_loader, val_loader, expconf)
-        trained_alg = trainer.fit()
-        # No need of validation since it's carried out internally by the trainer.
+        alg, exp_conf = alg
+
+        with tune.checkpoint_dir(0) as checkpoint_dir:
+            exp_conf.best_model_path = os.path.join(checkpoint_dir, 'best_model.npz')
+            trainer = Trainer(alg, train_loader, val_loader, exp_conf)
+            trained_alg = trainer.fit()
+            to_save = check_whether_to_save(trainer.best_value, trainer.best_model_path)
+
+            if not to_save:
+                # Delete self since it shouldn't have been saved
+                shutil.rmtree(os.path.dirname(trainer.best_model_path))
 
 
 def run_train_val(conf: dict, run_name: str):
@@ -245,7 +273,7 @@ def run_test(run_name: str, best_config: dict, best_checkpoint=None):
     alg.load_model_from_path(best_checkpoint)
     metrics_values = evaluate_recommender_algorithm(alg, test_loader, best_config['seed'])
     wandb.log(metrics_values)
-    # continue here for sgdmf
+
     wandb.finish()
 
     return metrics_values

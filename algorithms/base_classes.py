@@ -72,3 +72,10 @@ class SGDBasedRecommenderAlgorithm(RecommenderAlgorithm, ABC, nn.Module):
         self.eval()
         out = self(u_idxs, i_idxs)
         return out
+
+    def save_model_to_path(self, path: str):
+        torch.save(self.state_dict(), path)
+
+    def load_model_from_path(self, path: str):
+        state_dict = torch.load(path)
+        self.load_state_dict(state_dict)

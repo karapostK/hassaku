@@ -1,6 +1,6 @@
-import os
-
+import numpy as np
 import torch
+from ray import tune
 from torch import nn
 from torch.utils import data
 from tqdm import tqdm, trange
@@ -19,7 +19,7 @@ class ExperimentConfig:
     def __init__(self, n_epochs: int = 100, device: str = 'cuda',
                  rec_loss: RecommenderSystemLoss = RecommenderSystemLossesEnum.bce.value(), lr: float = 1e-3,
                  wd: float = 1e-4, optim_type: 'str' = 'adam', max_patience: int = 10,
-                 best_model_path: str = '../models/'):
+                 best_model_path: str = './best_model.npz'):
         assert n_epochs > 0, f"Number of epochs ({n_epochs}) should be positive"
         assert device in ['cuda', 'cpu'], f"Device ({device}) not valid"
         assert lr > 0 and wd >= 0, f"Learning rate ({lr}) and Weight decay ({wd}) should be positive"
@@ -74,9 +74,11 @@ class Trainer:
 
         self.optimizing_metric = OPTIMIZING_METRIC
         self.max_patience = conf.max_patience
-        self.best_model_path = os.path.join(conf.best_model_path, self.pointer_to_model.name + '_best_model.pth')
+        self.best_model_path = conf.best_model_path
 
         self.optimizer = conf.optim(self.model.parameters(), lr=conf.lr, weight_decay=conf.wd)
+
+        self.best_value = -np.inf
 
         print(f'Built Trainer module \n'
               f'- n_epochs: {self.n_epochs} \n'
@@ -92,9 +94,9 @@ class Trainer:
         """
 
         metrics_values = self.val()
-        best_value = metrics_values[self.optimizing_metric]
+        self.best_value = metrics_values[self.optimizing_metric]
         # tune.report(metrics_values)
-        print('Init - Avg Val Value {:.3f} \n'.format(best_value))
+        print('Init - Avg Val Value {:.3f} \n'.format(self.best_value))
 
         patience = 0
         for epoch in trange(self.n_epochs):
@@ -129,12 +131,13 @@ class Trainer:
             metrics_values = self.val()
             curr_value = metrics_values[self.optimizing_metric]
             print('Epoch {} - Avg Val Value {:.3f} \n'.format(epoch, curr_value))
-            # tune.report({**metrics_values, 'epoch_train_loss': epoch_train_loss})
+            tune.report(**{**metrics_values, 'epoch_train_loss': epoch_train_loss})
 
-            if curr_value > best_value:
-                best_value = curr_value
+            if curr_value > self.best_value:
+                self.best_value = curr_value
                 print('Epoch {} - New best model found (val value {:.3f}) \n'.format(epoch, curr_value))
-                torch.save(self.pointer_to_model.state_dict(), self.best_model_path)
+                self.pointer_to_model.save_model_to_path(self.best_model_path)
+
                 patience = 0
             else:
                 patience += 1
