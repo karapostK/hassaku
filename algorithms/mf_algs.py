@@ -1,6 +1,7 @@
 import typing
 
 import implicit
+import maxvolpy
 import numpy as np
 import torch
 from scipy import sparse as sp
@@ -115,3 +116,60 @@ class AlternatingLeastSquare(RecommenderAlgorithm):
         with np.load(path) as array_dict:
             self.users_factors = array_dict['users_factors']
             self.items_factors = array_dict['items_factors']
+
+
+class RBMF(RecommenderAlgorithm):
+
+    def __init__(self, n_representatives: int, lam: float = 1e-2):
+        super().__init__()
+        '''
+        User Representative-based Matrix Factorization (from https://dl.acm.org/doi/10.1145/2043932.2043943)
+        :param n_representatives: number of representatives to pick
+        :param lam: l2 regularization
+        '''
+
+        self.n_representatives = n_representatives
+        self.lam = lam
+
+        self.X = None
+        self.C = None
+
+        self.name = "RBMF"
+
+        print(f'Built {self.name} module \n'
+              f'- n_representatives: {self.n_representatives} \n'
+              f'- lam: {self.lam} \n')
+
+    def fit(self, matrix: sp.spmatrix):
+        print('Starting Fitting')
+        matrix = sp.csr_matrix(matrix)
+        matrix = matrix.asfptype()  # casting to float
+
+        u, _, _ = svds(matrix, k=self.n_representatives)
+
+        indxs, _ = maxvolpy.maxvol.maxvol(u)
+        C = matrix[indxs]
+        A = np.linalg.inv(C @ C.T + self.lam * np.eye(self.n_representatives))
+        X = matrix @ C.T @ A
+
+        self.X = np.array(X)
+        self.C = C.toarray().T
+
+        print('End Fitting')
+
+    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union[np.ndarray, torch.Tensor]:
+        assert self.X is not None and self.C is not None, "X and C are none!"
+
+        batch_users = self.X[u_idxs]
+        batch_items = self.C[i_idxs]
+        out = (batch_items * batch_users[:, None, :]).sum(axis=-1)  # Carrying out the dot product
+
+        return out
+
+    def save_model_to_path(self, path: str):
+        np.savez(path, X=self.X, C=self.C)
+
+    def load_model_from_path(self, path: str):
+        with np.load(path) as array_dict:
+            self.X = array_dict['X']
+            self.C = array_dict['C']

@@ -33,7 +33,7 @@ def load_data(conf: dict, split_set: str):
             batch_size=conf['batch_size'] if 'batch_size' in conf else 64,
             shuffle=True,
             num_workers=2,
-            prefetch_factor=5
+            #prefetch_factor=5
         )
         return train_loader
     elif split_set == 'val':
@@ -44,7 +44,6 @@ def load_data(conf: dict, split_set: str):
             n_neg=NEG_VAL,
             neg_strategy=conf['eval_neg_strategy'],
             batch_size=conf['val_batch_size'],
-            num_workers=2
         )
         return val_loader
     elif split_set == 'test':
@@ -55,7 +54,6 @@ def load_data(conf: dict, split_set: str):
             n_neg=NEG_VAL,
             neg_strategy=conf['eval_neg_strategy'],
             batch_size=conf['val_batch_size'],
-            num_workers=2
         )
 
         return test_loader
@@ -82,6 +80,8 @@ def build_algorithm(alg: RecAlgorithmsEnum, conf: dict, dataloader):
         return RecAlgorithmsEnum.slim.value(conf['alpha'], conf['l1_ratio'], conf['max_iter'])
     elif alg == RecAlgorithmsEnum.als:
         return RecAlgorithmsEnum.als.value(conf['alpha'], conf['factors'], conf['regularization'], conf['n_iterations'])
+    elif alg == RecAlgorithmsEnum.rbmf:
+        return RecAlgorithmsEnum.rbmf.value(conf['n_representatives'], conf['lam'])
     elif alg in [RecAlgorithmsEnum.sgdmf]:
         # Need to build the config for the trainer
 
@@ -157,7 +157,7 @@ def tune_training(conf: dict, checkpoint_dir=None):
     alg = build_algorithm(conf['alg'], conf, train_loader)
 
     if conf['alg'] in [RecAlgorithmsEnum.svd, RecAlgorithmsEnum.uknn, RecAlgorithmsEnum.iknn, RecAlgorithmsEnum.slim,
-                       RecAlgorithmsEnum.als]:
+                       RecAlgorithmsEnum.als, RecAlgorithmsEnum.rbmf]:
         # -- Training --
         alg.fit(train_loader.dataset.iteration_matrix)
 
@@ -184,17 +184,18 @@ def tune_training(conf: dict, checkpoint_dir=None):
         with tune.checkpoint_dir(0) as checkpoint_dir:
             exp_conf.best_model_path = os.path.join(checkpoint_dir, 'best_model.npz')
             trainer = Trainer(alg, train_loader, val_loader, exp_conf)
-            trained_alg = trainer.fit()
-            to_save = check_whether_to_save(trainer.best_value, trainer.best_model_path)
+            trainer.fit()
+            to_save = check_whether_to_save(trainer.best_value, os.path.dirname(trainer.best_model_path))
 
             if not to_save:
                 # Delete self since it shouldn't have been saved
-                shutil.rmtree(os.path.dirname(trainer.best_model_path))
+                if os.path.isdir(os.path.dirname(trainer.best_model_path)):
+                    shutil.rmtree(os.path.dirname(trainer.best_model_path))
 
 
 def run_train_val(conf: dict, run_name: str):
     best_config = None
-    best_checkpoint = None
+    best_checkpoint = ''
 
     print(conf)
 
@@ -232,21 +233,21 @@ def run_train_val(conf: dict, run_name: str):
                                        reinit=True, force=True, job_type='train/val', tags=run_name.split('_'))
 
         # Stopper
-        stopper = TrialPlateauStopper(metric_name, std=1e-3, num_results=5, grace_period=10)
+        # stopper = TrialPlateauStopper(metric_name, std=1e-3, num_results=5, grace_period=10)
 
         tune.register_trainable(run_name, tune_training)
         analysis = tune.run(
             run_name,
             config=conf,
             name=generate_id(prefix=run_name),
-            resources_per_trial={'gpu': 0.2, 'cpu': 1},
+            #resources_per_trial={'gpu': 0, },#'cpu': 1}, # TODO mazbe remove cpu=1
             scheduler=scheduler,
             search_alg=search_alg,
             num_samples=NUM_SAMPLES,
             callbacks=[callback],
             metric=metric_name,
-            stop=stopper,
-            max_concurrent_trials=6,
+            # stop=stopper,
+            max_concurrent_trials=3,
             mode='max'
         )
         best_trial = analysis.get_best_trial(metric_name, 'max', scope='all')
@@ -256,7 +257,7 @@ def run_train_val(conf: dict, run_name: str):
     return best_config, best_checkpoint
 
 
-def run_test(run_name: str, best_config: dict, best_checkpoint=None):
+def run_test(run_name: str, best_config: dict, best_checkpoint=''):
     test_loader = load_data(best_config, 'test')
 
     with open(WANDB_API_KEY_PATH) as wandb_file:

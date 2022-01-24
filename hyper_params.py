@@ -36,6 +36,11 @@ svd_hyper_param = {
     'n_factors': tune.randint(10, 100),
 }
 
+rbmf_hyper_param = {
+    **base_param,
+    'n_representatives': tune.randint(10, 100),
+    'lam': tune.loguniform(1e-4, 1e-1)
+}
 knn_hyper_param = {
     **base_param,
     'k': tune.lograndint(1, 1000),
@@ -85,5 +90,6 @@ alg_param = {
     RecAlgorithmsEnum.iknn: knn_hyper_param,
     RecAlgorithmsEnum.slim: slim_hyper_param,
     RecAlgorithmsEnum.sgdmf: sgdmf_hyper_params,
-    RecAlgorithmsEnum.als: als_hyper_param
+    RecAlgorithmsEnum.als: als_hyper_param,
+    RecAlgorithmsEnum.rbmf: rbmf_hyper_param
 }

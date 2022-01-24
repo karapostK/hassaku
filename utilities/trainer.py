@@ -3,7 +3,7 @@ import torch
 from ray import tune
 from torch import nn
 from torch.utils import data
-from tqdm import tqdm, trange
+from tqdm import trange
 
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm
 from utilities.consts import OPTIMIZING_METRIC
@@ -109,7 +109,7 @@ class Trainer:
 
             epoch_train_loss = 0
 
-            for u_idxs, i_idxs, labels in tqdm(self.train_loader):
+            for u_idxs, i_idxs, labels in self.train_loader:
                 u_idxs = u_idxs.to(self.device)
                 i_idxs = i_idxs.to(self.device)
                 labels = labels.to(self.device)
