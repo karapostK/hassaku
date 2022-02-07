@@ -9,6 +9,7 @@ from filelock import FileLock
 from ray import tune
 from ray.tune.integration.wandb import WandbLoggerCallback
 from ray.tune.schedulers import ASHAScheduler
+from ray.tune.stopper import CombinedStopper, TrialPlateauStopper
 from ray.tune.suggest.hyperopt import HyperOptSearch
 
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm
@@ -177,8 +178,10 @@ def run_train_val(conf: dict, run_name: str, **kwargs):
                                    reinit=True, force=True, job_type='train/val', tags=run_name.split('_'))
 
     # Stopper
-    stopper = NoImprovementsStopper(metric_name, max_patience=10)
-    # stopper = TrialPlateauStopper(metric_name, std=1e-3, num_results=5, grace_period=10)
+    stopper = CombinedStopper(
+        NoImprovementsStopper(metric_name, max_patience=10),
+        TrialPlateauStopper(metric_name, std=1e-3, num_results=5, grace_period=10)
+    )
 
     tune.register_trainable(run_name, tune_training)
     analysis = tune.run(

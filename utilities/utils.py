@@ -2,6 +2,7 @@ import functools
 import json
 import pickle
 import random
+from collections import defaultdict
 from datetime import datetime
 
 import numpy as np
@@ -117,19 +118,20 @@ class NoImprovementsStopper(Stopper):
     def __init__(self, metric: str, max_patience: int = 10):
         self.metric = metric
         self.max_patience = max_patience
-        self._curr_patience = self.max_patience
-        self._curr_max = -np.inf
+
+        self._curr_patience_dict = defaultdict(lambda: self.max_patience)
+        self._curr_max_dict = defaultdict(lambda: -np.inf)
 
     def __call__(self, trial_id, result):
         current_metric = result.get(self.metric)
 
-        if current_metric > self._curr_max:
-            self._curr_patience = self.max_patience
-            self._curr_max = current_metric
+        if current_metric > self._curr_max_dict[trial_id]:
+            self._curr_patience_dict[trial_id] = self.max_patience
+            self._curr_max_dict[trial_id] = current_metric
         else:
-            self._curr_patience -= 1
+            self._curr_patience_dict[trial_id] -= 1
 
-        if self._curr_patience == 0:
+        if self._curr_patience_dict[trial_id] == 0:
             print('Maximum Patience Reached. Stopping')
             return True
         else:
