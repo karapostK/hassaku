@@ -43,7 +43,7 @@ rbmf_hyper_param = {
 }
 knn_hyper_param = {
     **base_param,
-    'k': tune.lograndint(1, 1000),
+    'k': tune.randint(1, 100),
     'sim_func_params': hp.choice('sim_func_name', [
         {
             'sim_func_name': 'jaccard'
@@ -77,19 +77,39 @@ slim_hyper_param = {
 als_hyper_param = {
     **base_param,
     'alpha': tune.randint(1, 100),
-    'factors': tune.randint(10, 100),
+    'factors': tune.randint(1, 4), # Als automatically multiplies this value by 32!
     'regularization': tune.loguniform(1e-4, 1e-1),
-    'n_iterations': tune.randint(100, 1000)
+    'n_iterations': tune.randint(1, 50)
 }
 
+uprotomf_hyper_param = {
+    **base_hyper_params,
+    'latent_dimension': tune.randint(10, 100),
+    'n_prototypes': tune.randint(10, 100),
+    'sim_proto_weight': tune.loguniform(1e-3, 10),
+    'sim_batch_weight': tune.loguniform(1e-3, 10)
+}
+
+uiprotomf_hyper_param = {
+    **base_hyper_params,
+    'latent_dimension': tune.randint(10, 100),
+    'u_n_prototypes': tune.randint(10, 100),
+    'i_n_prototypes': tune.randint(10, 100),
+
+    'u_sim_proto_weight': 0.,
+    'u_sim_batch_weight': 0.,
+    'i_sim_proto_weight': 0.,
+    'i_sim_batch_weight': 0.,
+
+}
 alg_param = {
-    RecAlgorithmsEnum.random: base_param,
-    RecAlgorithmsEnum.popular: base_param,
     RecAlgorithmsEnum.svd: svd_hyper_param,
     RecAlgorithmsEnum.uknn: knn_hyper_param,
     RecAlgorithmsEnum.iknn: knn_hyper_param,
     RecAlgorithmsEnum.slim: slim_hyper_param,
     RecAlgorithmsEnum.sgdmf: sgdmf_hyper_params,
     RecAlgorithmsEnum.als: als_hyper_param,
-    RecAlgorithmsEnum.rbmf: rbmf_hyper_param
+    RecAlgorithmsEnum.rbmf: rbmf_hyper_param,
+    RecAlgorithmsEnum.uprotomf: uprotomf_hyper_param,
+    RecAlgorithmsEnum.uiprotomf: uiprotomf_hyper_param
 }

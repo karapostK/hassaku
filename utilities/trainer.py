@@ -6,8 +6,8 @@ from torch.utils import data
 from tqdm import trange
 
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm
-from utilities.consts import OPTIMIZING_METRIC
-from utilities.eval import Evaluator
+from utilities.consts import OPTIMIZING_METRIC, SINGLE_SEED
+from utilities.eval import evaluate_recommender_algorithm
 from utilities.rec_losses import RecommenderSystemLossesEnum, RecommenderSystemLoss
 
 
@@ -18,16 +18,14 @@ class ExperimentConfig:
 
     def __init__(self, n_epochs: int = 100, device: str = 'cuda',
                  rec_loss: RecommenderSystemLoss = RecommenderSystemLossesEnum.bce.value(), lr: float = 1e-3,
-                 wd: float = 1e-4, optim_type: 'str' = 'adam', max_patience: int = 10,
-                 best_model_path: str = './best_model.npz'):
+                 wd: float = 1e-4, optim_type: 'str' = 'adam', best_model_path: str = './best_model.npz',
+                 seed=SINGLE_SEED):
+
         assert n_epochs > 0, f"Number of epochs ({n_epochs}) should be positive"
         assert device in ['cuda', 'cpu'], f"Device ({device}) not valid"
         assert lr > 0 and wd >= 0, f"Learning rate ({lr}) and Weight decay ({wd}) should be positive"
         assert optim_type in ['adam', 'adagrad'], f"Optimizer ({optim_type}) not implemented"
-        assert max_patience is None or max_patience > 0, f"Max patience f({max_patience}) should either be None or positive"
         """
-        :param max_patience: # of consecutive epochs in which the model does not improve over the validation data. After
-        the number is reached, the training is halted.
         :param best_model_path: path whereto save the best model during training
         """
 
@@ -36,13 +34,24 @@ class ExperimentConfig:
         self.rec_loss = rec_loss
         self.lr = lr
         self.wd = wd
-        self.max_patience = max_patience
         self.best_model_path = best_model_path
+        self.seed = seed
 
         if optim_type == 'adam':
             self.optim = torch.optim.Adam
         elif optim_type == 'adagrad':
             self.optim = torch.optim.Adagrad
+
+    @staticmethod
+    def build_from_conf(conf: dict):
+
+        return ExperimentConfig(n_epochs=conf['n_epochs'],
+                                rec_loss=conf['rec_loss'].value(),
+                                lr=conf['optim_param']['lr'],
+                                wd=conf['optim_param']['wd'],
+                                optim_type=conf['optim_param']['optim'],
+                                device=conf['device'] if 'device' in conf else 'cuda',
+                                seed=conf['seed'])
 
 
 class Trainer:
@@ -64,6 +73,7 @@ class Trainer:
         self.rec_loss = conf.rec_loss
 
         self.device = conf.device
+        self.seed = conf.seed
 
         self.model = model
         self.pointer_to_model = self.model
@@ -73,7 +83,6 @@ class Trainer:
         self.model.to(self.device)
 
         self.optimizing_metric = OPTIMIZING_METRIC
-        self.max_patience = conf.max_patience
         self.best_model_path = conf.best_model_path
 
         self.optimizer = conf.optim(self.model.parameters(), lr=conf.lr, weight_decay=conf.wd)
@@ -85,7 +94,6 @@ class Trainer:
               f'- rec_loss: {self.rec_loss.__class__.__name__} \n'
               f'- device: {self.device} \n'
               f'- optimizing_metric: {self.optimizing_metric} \n'
-              f'- max_patience: {self.max_patience} \n'
               f'- best_model_path: {self.best_model_path} \n')
 
     def fit(self):
@@ -95,15 +103,10 @@ class Trainer:
 
         metrics_values = self.val()
         self.best_value = metrics_values[self.optimizing_metric]
-        # tune.report(metrics_values)
+
         print('Init - Avg Val Value {:.3f} \n'.format(self.best_value))
 
-        patience = 0
         for epoch in trange(self.n_epochs):
-
-            if patience == self.max_patience:
-                print('Max Patience reached, stopping.')
-                break
 
             self.model.train()
 
@@ -138,10 +141,6 @@ class Trainer:
                 print('Epoch {} - New best model found (val value {:.3f}) \n'.format(epoch, curr_value))
                 self.pointer_to_model.save_model_to_path(self.best_model_path)
 
-                patience = 0
-            else:
-                patience += 1
-
         # Fitting is over, return the best model
         trained_model = self.pointer_to_model.to('cpu')
         params = torch.load(self.best_model_path, map_location='cpu')
@@ -156,24 +155,7 @@ class Trainer:
         """
         self.model.eval()
         print('Validation started')
-        val_loss = 0
-        evaluator = Evaluator(self.val_loader.dataset.n_users)
 
-        for u_idxs, i_idxs, labels in self.val_loader:
-            u_idxs = u_idxs.to(self.device)
-            i_idxs = i_idxs.to(self.device)
-            labels = labels.to(self.device)
-
-            out = self.model(u_idxs, i_idxs)
-
-            val_loss += self.rec_loss.compute_loss(out, labels).item()
-            val_loss += self.pointer_to_model.get_and_reset_other_loss()
-
-            out = out.to('cpu')
-
-            evaluator.eval_batch(out)
-
-        val_loss /= len(self.val_loader)
-        metrics_values = {**evaluator.get_results(), 'val_loss': val_loss}
-
+        metrics_values = evaluate_recommender_algorithm(self.pointer_to_model, self.val_loader, self.seed + 1, self.device,
+                                                        self.rec_loss)
         return metrics_values

@@ -1,5 +1,6 @@
 import bottleneck as bn
 import numpy as np
+import torch
 from torch.utils.data import DataLoader
 
 from algorithms.base_classes import RecommenderAlgorithm
@@ -101,16 +102,32 @@ class Evaluator:
         return metrics_dict
 
 
-def evaluate_recommender_algorithm(alg: RecommenderAlgorithm, eval_loader: DataLoader, seed: int = SINGLE_SEED):
+def evaluate_recommender_algorithm(alg: RecommenderAlgorithm, eval_loader: DataLoader, seed: int = SINGLE_SEED,
+                                   device='cpu', rec_loss=None):
     reproducible(seed)
 
     evaluator = Evaluator(eval_loader.dataset.n_users)
-
+    eval_loss = 0
     for u_idxs, i_idxs, labels in eval_loader:
+        u_idxs = u_idxs.to(device)
+        i_idxs = i_idxs.to(device)
+        labels = labels.to(device)
+
         out = alg.predict(u_idxs, i_idxs)
+
+        if rec_loss is not None:
+            eval_loss += rec_loss.compute_loss(out, labels).item()
+            eval_loss += alg.get_and_reset_other_loss()
+
+        if isinstance(out, torch.Tensor):
+            out = out.to('cpu')
 
         evaluator.eval_batch(out)
 
+    eval_loss /= len(eval_loader)
     metrics_values = evaluator.get_results()
+    if rec_loss is not None:
+        metrics_values = {**metrics_values, 'eval_loss': eval_loss}
+
     print_results(metrics_values)
     return metrics_values

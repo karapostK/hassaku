@@ -56,12 +56,17 @@ class SVDAlgorithm(RecommenderAlgorithm):
             self.users_factors = array_dict['users_factors']
             self.items_factors = array_dict['items_factors']
 
+    @staticmethod
+    def build_from_conf(conf: dict, dataset):
+        return SVDAlgorithm(conf['n_factors'])
+
 
 class AlternatingLeastSquare(RecommenderAlgorithm):
     def __init__(self, alpha: int, factors: int, regularization: float, n_iterations: int):
         super().__init__()
         '''
         From Collaborative Filtering for Implicit Datasets (http://yifanhu.net/PUB/cf.pdf)
+        Implementation from the implicit library
         :param alpha: controls the confidence value (see original paper Collaborative Filtering for Implicit Datasets)
         :param factors: embedding size
         :param regularization: regularization factor (the l2 factor)
@@ -69,7 +74,7 @@ class AlternatingLeastSquare(RecommenderAlgorithm):
         '''
 
         self.alpha = alpha
-        self.factors = factors
+        self.factors = factors * 32
         self.regularization = regularization
         self.n_iterations = n_iterations
 
@@ -95,8 +100,8 @@ class AlternatingLeastSquare(RecommenderAlgorithm):
                                                    num_threads=10)
         als.fit(self.alpha * matrix)
 
-        self.items_factors = als.item_factors.to_numpy()
-        self.users_factors = als.user_factors.to_numpy()
+        self.items_factors = als.item_factors
+        self.users_factors = als.user_factors
         print('End Fitting')
 
     def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union[np.ndarray, torch.Tensor]:
@@ -116,6 +121,10 @@ class AlternatingLeastSquare(RecommenderAlgorithm):
         with np.load(path) as array_dict:
             self.users_factors = array_dict['users_factors']
             self.items_factors = array_dict['items_factors']
+
+    @staticmethod
+    def build_from_conf(conf: dict, dataset):
+        return AlternatingLeastSquare(conf['alpha'], conf['factors'], conf['regularization'], conf['n_iterations'])
 
 
 class RBMF(RecommenderAlgorithm):
@@ -173,3 +182,7 @@ class RBMF(RecommenderAlgorithm):
         with np.load(path) as array_dict:
             self.X = array_dict['X']
             self.C = array_dict['C']
+
+    @staticmethod
+    def build_from_conf(conf: dict, dataset):
+        return RBMF(conf['n_representatives'], conf['lam'])

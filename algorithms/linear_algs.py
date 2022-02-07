@@ -123,6 +123,10 @@ class SLIM(RecommenderAlgorithm):
         with np.load(path) as array_dict:
             self.pred_mtx = array_dict['pred_mtx']
 
+    @staticmethod
+    def build_from_conf(conf: dict,dataset):
+        return SLIM(conf['alpha'], conf['l1_ratio'], conf['max_iter'])
+
 
 class EASE(RecommenderAlgorithm):
 
@@ -160,3 +164,14 @@ class EASE(RecommenderAlgorithm):
     def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union:
         out = self.pred_mtx[u_idxs[:, None], i_idxs]
         return out
+
+    def save_model_to_path(self, path: str):
+        np.savez(path, pred_mtx=self.pred_mtx)
+
+    def load_model_from_path(self, path: str):
+        with np.load(path) as array_dict:
+            self.pred_mtx = array_dict['pred_mtx']
+
+    @staticmethod
+    def build_from_conf(conf: dict,dataset):
+        return EASE(conf['lam'])

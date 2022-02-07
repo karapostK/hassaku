@@ -8,6 +8,42 @@ from algorithms.base_classes import SGDBasedRecommenderAlgorithm
 from utilities.utils import general_weight_init
 
 
+class SGDMatrixFactorization(SGDBasedRecommenderAlgorithm):
+    """
+    Implements a simple Matrix Factorization model trained with gradient descent
+    It is similar to Probabilistic Matrix Factorization (https://proceedings.neurips.cc/paper/2007/file/d7322ed717dedf1eb4e6e52a37ea7bcd-Paper.pdf)
+    """
+
+    def __init__(self, n_users: int, n_items: int, latent_dimension: int = 100):
+        super().__init__()
+
+        self.n_users = n_users
+        self.n_items = n_items
+        self.latent_dimension = latent_dimension
+
+        self.user_embeddings = nn.Embedding(self.n_users, self.latent_dimension)
+        self.item_embeddings = nn.Embedding(self.n_items, self.latent_dimension)
+
+        self.apply(general_weight_init)
+
+        self.name = 'SGDMatrixFactorization'
+
+        print(f'Built {self.name} module\n'
+              f'- latent_dimension: {self.latent_dimension}')
+
+    def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
+        u_embed = self.user_embeddings(u_idxs)
+        i_embed = self.item_embeddings(i_idxs)
+
+        out = (u_embed[:, None, :] * i_embed).sum(axis=-1)
+
+        return out
+
+    @staticmethod
+    def build_from_conf(conf: dict, dataset):
+        return SGDMatrixFactorization(dataset.n_users, dataset.n_items, conf['embedding_dim'])
+
+
 class DeepMatrixFactorization(SGDBasedRecommenderAlgorithm):
     """
     Deep Matrix Factorization Models for Recommender Systems by Xue et al. (https://www.ijcai.org/Proceedings/2017/0447.pdf)
@@ -79,38 +115,6 @@ class DeepMatrixFactorization(SGDBasedRecommenderAlgorithm):
         sim = self.cosine_func(u_vec[:, None, :], i_vec)
 
         return sim
-
-
-class SGDMatrixFactorization(SGDBasedRecommenderAlgorithm):
-    """
-    Implements a simple Matrix Factorization model trained with gradient descent
-    It is similar to Probabilistic Matrix Factorization (https://proceedings.neurips.cc/paper/2007/file/d7322ed717dedf1eb4e6e52a37ea7bcd-Paper.pdf)
-    """
-
-    def __init__(self, n_users: int, n_items: int, latent_dimension: int = 100):
-        super().__init__()
-
-        self.n_users = n_users
-        self.n_items = n_items
-        self.latent_dimension = latent_dimension
-
-        self.user_embeddings = nn.Embedding(self.n_users, self.latent_dimension)
-        self.item_embeddings = nn.Embedding(self.n_items, self.latent_dimension)
-
-        self.apply(general_weight_init)
-
-        self.name = 'SGDMatrixFactorization'
-
-        print(f'Built {self.name} module\n'
-              f'- latent_dimension: {self.latent_dimension}')
-
-    def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
-        u_embed = self.user_embeddings(u_idxs)
-        i_embed = self.item_embeddings(i_idxs)
-
-        out = (u_embed[:, None, :] * i_embed).sum(axis=-1)
-
-        return out
 
 
 class GeneralizedMatrixFactorizationNCF(SGDMatrixFactorization):
@@ -419,7 +423,8 @@ class UIProtoMF(SGDBasedRecommenderAlgorithm):
 
         # Item pass
 
-        i_sim_mtx = self.cosine_sim_func(i_embed.unsqueeze(-2), self.i_prototypes)  # [batch_size,n_neg + 1,n_prototypes]
+        i_sim_mtx = self.cosine_sim_func(i_embed.unsqueeze(-2),
+                                         self.i_prototypes)  # [batch_size,n_neg + 1,n_prototypes]
         u_proj = self.u_to_i_proj(u_embed)
 
         i_dots = (u_proj[:, None, :] * i_sim_mtx).sum(axis=-1)

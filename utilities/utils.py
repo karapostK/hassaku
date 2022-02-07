@@ -6,6 +6,7 @@ from datetime import datetime
 
 import numpy as np
 import torch
+from ray.tune import Stopper
 from torch import nn
 
 
@@ -69,7 +70,6 @@ def print_results(metrics):
         print(STR_RESULT.format(metric_name, metric_value))
 
 
-
 def generate_slices(total_columns):
     """
     Generate slices that will be processed based on the number of cores
@@ -100,6 +100,7 @@ class FunctionWrapper:
     """
     Since functions are not properly recognized as enum items, we need to use a wrapper function.
     """
+
     def __init__(self, function):
         self.function = function
         functools.update_wrapper(self, function)
@@ -109,3 +110,30 @@ class FunctionWrapper:
 
     def __repr__(self):
         return self.function.__repr__()
+
+
+class NoImprovementsStopper(Stopper):
+
+    def __init__(self, metric: str, max_patience: int = 10):
+        self.metric = metric
+        self.max_patience = max_patience
+        self._curr_patience = self.max_patience
+        self._curr_max = -np.inf
+
+    def __call__(self, trial_id, result):
+        current_metric = result.get(self.metric)
+
+        if current_metric > self._curr_max:
+            self._curr_patience = self.max_patience
+            self._curr_max = current_metric
+        else:
+            self._curr_patience -= 1
+
+        if self._curr_patience == 0:
+            print('Maximum Patience Reached. Stopping')
+            return True
+        else:
+            return False
+
+    def stop_all(self):
+        return False

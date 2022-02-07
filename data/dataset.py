@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 from scipy import sparse as sp
 from torch.utils import data
-from torch.utils.data.dataset import T_co
 
 
 class RecDataset(data.Dataset, abc.ABC):
@@ -178,7 +177,7 @@ class InterRecDataset(RecDataset):
     def __len__(self) -> int:
         return self.iteration_matrix.nnz
 
-    def __getitem__(self, index) -> T_co:
+    def __getitem__(self, index):
         """
         Loads the (user,item) pair associated to the index and performs the negative sampling.
         :param index: (user,item) index pair (as defined by the COO.data vector)
@@ -242,7 +241,7 @@ class UserRecDataset(RecDataset):
     def __len__(self):
         return self.n_users
 
-    def __getitem__(self, user_index) -> T_co:
+    def __getitem__(self, user_index):
 
         """
         Loads the user's interactions associated to the user index.

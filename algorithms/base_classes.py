@@ -8,7 +8,7 @@ from torch import nn
 class RecommenderAlgorithm(ABC):
     """
     It implements the basic class for a Recommender System Algorithm.
-    Each new algorithm has to override the method 'pred'.
+    Each new algorithm has to override the method 'predict'.
     """
 
     def __init__(self):
@@ -40,10 +40,17 @@ class RecommenderAlgorithm(ABC):
         Load the necessary data to reconstruct a previous model from a specified path
         """
 
+    @staticmethod
+    @abstractmethod
+    def build_from_conf(conf: dict, dataset):
+        """
+        Build the class from a configuration dictionary
+        """
+
 
 class SGDBasedRecommenderAlgorithm(RecommenderAlgorithm, ABC, nn.Module):
     """
-
+    Base class for Recommender System algorithms based on iterative updates with stochastic gradient descent. It requires a Trainer object to update.
     """
 
     def __init__(self):
