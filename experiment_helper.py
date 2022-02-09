@@ -1,6 +1,5 @@
 import json
 import os
-import shutil
 from collections import defaultdict
 
 import numpy as np
@@ -85,7 +84,6 @@ def check_whether_to_save(run_metric: float, checkpoint_file: str) -> bool:
             sync_data = json.load(in_file)
             top_paths = sync_data['paths']
             top_values = sync_data['values']
-
         # Compare the current trial with the trial that has the minimum metric value within the top-3
         argmin = np.argmin(top_values)
         if top_values[argmin] < run_metric:
@@ -96,8 +94,10 @@ def check_whether_to_save(run_metric: float, checkpoint_file: str) -> bool:
 
             # Delete previous trial
             old_path = top_paths[argmin]
-            if os.path.isdir(old_path):
-                shutil.rmtree(old_path)
+
+            if os.path.isfile(old_path):
+                os.remove(old_path)
+                print('Deleted old file :', old_path)
 
             top_values[argmin] = run_metric
             top_paths[argmin] = checkpoint_file
