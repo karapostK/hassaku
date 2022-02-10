@@ -25,7 +25,7 @@ parser.add_argument('--every', '-e', action='store_true', default=False, require
 
 parser.add_argument('--n_samples', '-ns', type=int, default=NUM_SAMPLES, required=False,
                     help='Number of hyperparameters configurations to sample')
-parser.add_argument('--n_gpus', '-g', type=float, default=0.25, required=False,
+parser.add_argument('--n_gpus', '-g', type=float, default=0.2, required=False,
                     help='Number of gpus per trial (<= 1 values are possible)')
 parser.add_argument('--n_concurrent', '-c', type=int, default=None, required=False,
                     help='Number of allowed concurrent trials.')

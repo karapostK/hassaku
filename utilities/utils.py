@@ -1,13 +1,16 @@
 import functools
 import json
+import os
 import pickle
 import random
+import shutil
 from collections import defaultdict
 from datetime import datetime
+from typing import Dict, List
 
 import numpy as np
 import torch
-from ray.tune import Stopper
+from ray.tune import Stopper, Callback
 from torch import nn
 
 
@@ -139,3 +142,60 @@ class NoImprovementsStopper(Stopper):
 
     def stop_all(self):
         return False
+
+
+class KeepOnlyTopTrials(Callback):
+    """
+    Callback class used to keep only the trials with the highest results.
+    If the trial becomes part of the top-n, it deletes the model with the current smallest metric value among the top-n.
+    """
+
+    def __init__(self, metric_name: str, n_tops: int = 3):
+        """
+        :param metric_name: metric used to compare trials among themselves
+        :param n_tops: how many trials to keep saved. Default to keeping only the top-3
+        """
+        self.metric_name = metric_name
+        self._trials_maxs: Dict["Trial", float] = {}
+
+        self._top_maxs: List[float] = [-np.inf] * n_tops
+        self._top_paths: List[str] = [''] * n_tops
+
+    def on_trial_result(self, iteration: int, trials: List["Trial"],
+                        trial: "Trial", result: Dict, **info):
+        current_max = self._trials_maxs.get(trial, -np.inf)
+
+        if current_max < result[self.metric_name]:
+            # Update own max
+            current_max = result[self.metric_name]
+            self._trials_maxs[trial] = current_max
+
+    def on_trial_complete(self, iteration: int, trials: List["Trial"],
+                          trial: "Trial", **info):
+
+        trial_max = self._trials_maxs[trial]
+
+        print(f'Trial {trial.trial_id} ended with maximum metric: {round(trial_max, 3)}')
+        print(f'Current top trial metrics: {[round(x, 3) for x in self._top_maxs]}')
+
+        argmin = np.argmin(self._top_maxs)
+        if self._top_maxs[argmin] < trial_max:
+            print(f'Trial {trial.trial_id} became one of the top trials')
+            # Save the current trial as current best
+
+            old_trial_path = self._top_paths[argmin]
+            self._top_maxs[argmin] = trial_max
+            self._top_paths[argmin] = trial.logdir
+
+            # Remove the previous-best
+            # N.B. The framework assumes that there is only a single checkpoint!
+            old_trial_checkpoint = os.path.join(old_trial_path, 'checkpoint_000000')
+            if os.path.isdir(old_trial_checkpoint):
+                shutil.rmtree(old_trial_checkpoint)
+
+        else:
+            print(f'Trial {trial.trial_id} did not become one of the top trials')
+            # Delete self checkpoint
+            trial_checkpoint = os.path.join(trial.logdir, 'checkpoint_000000')
+            if os.path.isdir(trial_checkpoint):
+                shutil.rmtree(trial_checkpoint)

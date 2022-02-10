@@ -1,10 +1,8 @@
-import json
 import os
 from collections import defaultdict
 
 import numpy as np
 import wandb
-from filelock import FileLock
 from ray import tune
 from ray.tune.integration.wandb import WandbLoggerCallback
 from ray.tune.schedulers import ASHAScheduler
@@ -19,7 +17,7 @@ from utilities.consts import NEG_VAL, SINGLE_SEED, PROJECT_NAME, WANDB_API_KEY_P
 from utilities.enums import RecAlgorithmsEnum, RecDatasetsEnum
 from utilities.eval import evaluate_recommender_algorithm
 from utilities.trainer import ExperimentConfig, Trainer
-from utilities.utils import generate_id, reproducible, NoImprovementsStopper
+from utilities.utils import generate_id, reproducible, NoImprovementsStopper, KeepOnlyTopTrials
 
 
 def load_data(conf: dict, split_set: str):
@@ -58,58 +56,6 @@ def load_data(conf: dict, split_set: str):
         return test_loader
 
 
-def check_whether_to_save(run_metric: float, checkpoint_file: str) -> bool:
-    """
-    This function manages the saving of the found models by saving only the top-3 best models for a specific algorithm.
-    This avoids saving all NUM_SAMPLES configurations of models.
-    If the trial becomes part of the top-3, it deletes the model with the current smallest metric value among the top-3. It returns to_save=True
-    If the trial does not become part of the top-3, do nothing and return to_save=False
-    :param run_metric: the metric of the current trial which will be used to check whether we save the model or not
-    :param checkpoint_file: the path pointing at the model
-    :return: boolean value indicating whether to save the current model
-    """
-
-    LOCK_PATH = '../file.loc'
-    SYNC_DATA_PATH = '../sync_data.json'
-
-    with FileLock(LOCK_PATH):
-
-        # Create file if not there the first time
-        if not os.path.isfile(SYNC_DATA_PATH):
-            with open(SYNC_DATA_PATH, 'w') as out_file:
-                json.dump({'paths': [''] * 3, 'values': [-np.inf] * 3}, out_file)
-
-        # Read the file used for synchronization
-        with open(SYNC_DATA_PATH, 'r') as in_file:
-            sync_data = json.load(in_file)
-            top_paths = sync_data['paths']
-            top_values = sync_data['values']
-        # Compare the current trial with the trial that has the minimum metric value within the top-3
-        argmin = np.argmin(top_values)
-        if top_values[argmin] < run_metric:
-            # Save
-            print('--- Run saved ---')
-            print('This trial: ', round(run_metric, 3))
-            print('Current top-3: ', [round(x, 3) for x in top_values])
-
-            # Delete previous trial
-            old_path = top_paths[argmin]
-
-            if os.path.isfile(old_path):
-                os.remove(old_path)
-                print('Deleted old file :', old_path)
-
-            top_values[argmin] = run_metric
-            top_paths[argmin] = checkpoint_file
-
-            with open(SYNC_DATA_PATH, 'w') as out_file:
-                json.dump({'paths': top_paths, 'values': top_values}, out_file)
-            return True
-        else:
-            # Don't save
-            return False
-
-
 def tune_training(conf: dict, checkpoint_dir=None):
     """
     Function executed by ray tune. It corresponds to a single trial.
@@ -129,13 +75,9 @@ def tune_training(conf: dict, checkpoint_dir=None):
             exp_conf = ExperimentConfig.build_from_conf(conf)
             exp_conf.best_model_path = checkpoint_file
 
+            # Validation happens within Trainer
             trainer = Trainer(alg, train_loader, val_loader, exp_conf)
             trainer.fit()
-
-            to_save = check_whether_to_save(trainer.best_value, checkpoint_file)
-            if not to_save and os.path.isfile(checkpoint_file):
-                # Delete self since it shouldn't have been saved
-                os.remove(checkpoint_file)
 
         else:
             checkpoint_file = os.path.join(checkpoint_dir, 'best_model.npz')
@@ -148,13 +90,7 @@ def tune_training(conf: dict, checkpoint_dir=None):
             tune.report(**metrics_values)
 
             # -- Save --
-            run_metric = metrics_values[OPTIMIZING_METRIC]
-
-            to_save = check_whether_to_save(run_metric, checkpoint_file)
-
-            # Save
-            if to_save:
-                alg.save_model_to_path(checkpoint_file)
+            alg.save_model_to_path(checkpoint_file)
 
 
 def run_train_val(conf: dict, run_name: str, **kwargs):
@@ -174,8 +110,10 @@ def run_train_val(conf: dict, run_name: str, **kwargs):
         scheduler = None
 
     # Logger
-    callback = WandbLoggerCallback(project=PROJECT_NAME, log_config=True, api_key_file=WANDB_API_KEY_PATH,
-                                   reinit=True, force=True, job_type='train/val', tags=run_name.split('_'))
+    log_callback = WandbLoggerCallback(project=PROJECT_NAME, log_config=True, api_key_file=WANDB_API_KEY_PATH,
+                                       reinit=True, force=True, job_type='train/val', tags=run_name.split('_'))
+
+    keep_callback = KeepOnlyTopTrials(metric_name, n_tops=3)
 
     # Stopper
     stopper = CombinedStopper(
@@ -192,7 +130,7 @@ def run_train_val(conf: dict, run_name: str, **kwargs):
         scheduler=scheduler,
         search_alg=search_alg,
         num_samples=kwargs['n_samples'],
-        callbacks=[callback],
+        callbacks=[log_callback, keep_callback],
         metric=metric_name,
         stop=stopper,
         max_concurrent_trials=kwargs['n_concurrent'],
