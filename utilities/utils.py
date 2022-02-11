@@ -1,9 +1,9 @@
 import functools
+import glob
 import json
 import os
 import pickle
 import random
-import shutil
 from collections import defaultdict
 from datetime import datetime
 from typing import Dict, List
@@ -189,13 +189,15 @@ class KeepOnlyTopTrials(Callback):
 
             # Remove the previous-best
             # N.B. The framework assumes that there is only a single checkpoint!
-            old_trial_checkpoint = os.path.join(old_trial_path, 'checkpoint_000000')
-            if os.path.isdir(old_trial_checkpoint):
-                shutil.rmtree(old_trial_checkpoint)
+            old_trial_checkpoint = os.path.join(old_trial_path, 'checkpoint_000000/best*')
+            checkpoint_lists = glob.glob(old_trial_checkpoint)
+            for checkpoint_file in checkpoint_lists:
+                os.remove(checkpoint_file)
 
         else:
             print(f'Trial {trial.trial_id} did not become one of the top trials')
             # Delete self checkpoint
-            trial_checkpoint = os.path.join(trial.logdir, 'checkpoint_000000')
-            if os.path.isdir(trial_checkpoint):
-                shutil.rmtree(trial_checkpoint)
+            trial_checkpoint = os.path.join(trial.logdir, 'checkpoint_000000/best*')
+            checkpoint_lists = glob.glob(trial_checkpoint)
+            for checkpoint_file in checkpoint_lists:
+                os.remove(checkpoint_file)
