@@ -2,20 +2,20 @@ import os
 from collections import defaultdict
 
 import numpy as np
-import wandb
 from ray import tune
 from ray.tune.integration.wandb import WandbLoggerCallback
 from ray.tune.schedulers import ASHAScheduler
 from ray.tune.stopper import CombinedStopper, TrialPlateauStopper
 from ray.tune.suggest.hyperopt import HyperOptSearch
 
+import wandb
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm
 from data.dataset import get_recdataset_dataloader
 from hyper_params import alg_param
 from utilities.consts import NEG_VAL, SINGLE_SEED, PROJECT_NAME, WANDB_API_KEY_PATH, DATA_PATH, OPTIMIZING_METRIC, \
     SEED_LIST
 from utilities.enums import RecAlgorithmsEnum, RecDatasetsEnum
-from utilities.eval import evaluate_recommender_algorithm
+from utilities.eval import evaluate_recommender_algorithm, evaluate_naive_algorithm
 from utilities.trainer import ExperimentConfig, Trainer
 from utilities.utils import generate_id, reproducible, NoImprovementsStopper, KeepOnlyTopTrials
 
@@ -160,10 +160,13 @@ def run_test(run_name: str, best_config: dict, best_checkpoint=''):
 
     # ---- Test ---- #
     alg = best_config['alg'].value.build_from_conf(best_config, test_loader.dataset)
-
     best_checkpoint = os.path.join(best_checkpoint, 'best_model.npz')
     alg.load_model_from_path(best_checkpoint)
-    metrics_values = evaluate_recommender_algorithm(alg, test_loader, best_config['seed'] + 2)
+    if best_config['alg'] in [RecAlgorithmsEnum.pop, RecAlgorithmsEnum.rand]:
+        metrics_values = evaluate_naive_algorithm(alg, test_loader, best_config['seed'] + 2)
+    else:
+        metrics_values = evaluate_recommender_algorithm(alg, test_loader, best_config['seed'] + 2)
+
     wandb.log(metrics_values)
 
     wandb.finish()
@@ -173,7 +176,7 @@ def run_test(run_name: str, best_config: dict, best_checkpoint=''):
 
 def start_hyper(alg: RecAlgorithmsEnum, dataset: RecDatasetsEnum, seed: int = SINGLE_SEED, **kwargs) -> dict:
     print('Starting Hyperparameter Optimization')
-    print(f'Seed is {seed}')
+    print(f'Dataset is {dataset.name} - Seed is {seed}')
     print('N.B. Val seed is obtained by seed + 1, Test seed by seed + 2 ')
 
     # ---- Algorithm's parameters and hyperparameters ---- #
@@ -192,8 +195,12 @@ def start_hyper(alg: RecAlgorithmsEnum, dataset: RecDatasetsEnum, seed: int = SI
     run_name = f'{alg.name}_{dataset.name}_{host_name}_{seed}'
 
     # ---- Train/Validation ---- #
-    print('Start Train/Val')
-    best_config, best_checkpoint = run_train_val(conf, run_name, **kwargs)
+    best_config, best_checkpoint = None, ''
+    if alg not in [RecAlgorithmsEnum.pop, RecAlgorithmsEnum.rand]:
+        print('Start Train/Val')
+        best_config, best_checkpoint = run_train_val(conf, run_name, **kwargs)
+    else:
+        best_config = conf
 
     print('Start Test')
     metric_values = run_test(run_name, best_config, best_checkpoint)
@@ -204,7 +211,7 @@ def start_hyper(alg: RecAlgorithmsEnum, dataset: RecDatasetsEnum, seed: int = SI
 
 def start_multiple_hyper(alg: RecAlgorithmsEnum, dataset: RecDatasetsEnum, **kwargs):
     print('Starting Multi-Hyperparameter Optimization')
-    print(f'Seeds are {SEED_LIST}')
+    print(f'Dataset is {dataset.name} - Seeds are {SEED_LIST}')
 
     # Accumulate the results in a dictionary: e.g. results_list['ndcg@10'] = [0.8,0.5,0.3]
     results_dict = defaultdict(list)
@@ -225,7 +232,7 @@ def start_multiple_hyper(alg: RecAlgorithmsEnum, dataset: RecDatasetsEnum, **kwa
     with open(WANDB_API_KEY_PATH) as wandb_file:
         wandb_api_key = wandb_file.read()
 
-    run_name = f'{alg.name}_{dataset}'
+    run_name = f'{alg.name}_{dataset.name}'
     wandb.login(key=wandb_api_key)
     wandb.init(project=PROJECT_NAME, group='aggr_results', name=run_name, force=True, job_type='test',
                tags=run_name.split('_'))

@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 
 from algorithms.base_classes import RecommenderAlgorithm
 from utilities.consts import K_VALUES, SINGLE_SEED
+from utilities.enums import RecAlgorithmsEnum
 from utilities.utils import reproducible, print_results
 
 
@@ -128,6 +129,40 @@ def evaluate_recommender_algorithm(alg: RecommenderAlgorithm, eval_loader: DataL
     metrics_values = evaluator.get_results()
     if rec_loss is not None:
         metrics_values = {**metrics_values, 'eval_loss': eval_loss}
+
+    print_results(metrics_values)
+    return metrics_values
+
+
+def evaluate_naive_algorithm(alg: RecommenderAlgorithm, eval_loader: DataLoader, seed: int = SINGLE_SEED):
+    """
+    Manual evaluation for Pop and Rand
+    """
+    reproducible(seed)
+
+    metrics_values = {}
+
+    for u_idxs, i_idxs, labels in eval_loader:
+
+        for b in range(u_idxs.shape[0]):  # Going over the batch size
+
+            if isinstance(alg, RecAlgorithmsEnum.rand.value):
+                chosen_items = np.random.choice(np.arange(eval_loader.dataset.n_items), i_idxs.shape[1], replace=False)
+            elif isinstance(alg, RecAlgorithmsEnum.pop.value):
+                chosen_items = np.argsort(-eval_loader.dataset.pop_distribution)[:i_idxs.shape[1]]
+            else:
+                raise ValueError('Algorithm provided is non-compatible with this evaluation procedure!')
+
+            for k in K_VALUES:
+                position = np.where(chosen_items[:k] == i_idxs[b, 0].item())[0]
+                u_hr = int(len(position) > 0)
+
+                u_ndcg = 1 / (1 + np.log2(1 + position[0])) if len(position) > 0 else 0
+                metrics_values[f'hit_ratio@{k}'] = metrics_values.get(f'hit_ratio@{k}', 0) + u_hr
+                metrics_values[f'ndcg@{k}'] = metrics_values.get(f'ndcg@{k}', 0) + u_ndcg
+
+    for metric_name in metrics_values:
+        metrics_values[metric_name] /= eval_loader.dataset.n_users
 
     print_results(metrics_values)
     return metrics_values

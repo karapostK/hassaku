@@ -111,5 +111,7 @@ alg_param = {
     RecAlgorithmsEnum.als: als_hyper_param,
     RecAlgorithmsEnum.rbmf: rbmf_hyper_param,
     RecAlgorithmsEnum.uprotomf: uprotomf_hyper_param,
-    RecAlgorithmsEnum.uiprotomf: uiprotomf_hyper_param
+    RecAlgorithmsEnum.uiprotomf: uiprotomf_hyper_param,
+    RecAlgorithmsEnum.pop: base_param,
+    RecAlgorithmsEnum.rand: base_param
 }
