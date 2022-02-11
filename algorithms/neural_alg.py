@@ -14,22 +14,38 @@ class SGDMatrixFactorization(SGDBasedRecommenderAlgorithm):
     It is similar to Probabilistic Matrix Factorization (https://proceedings.neurips.cc/paper/2007/file/d7322ed717dedf1eb4e6e52a37ea7bcd-Paper.pdf)
     """
 
-    def __init__(self, n_users: int, n_items: int, latent_dimension: int = 100):
+    def __init__(self, n_users: int, n_items: int, latent_dimension: int = 100, use_user_bias: bool = False,
+                 use_item_bias: bool = False, use_global_bias: bool = False):
         super().__init__()
 
         self.n_users = n_users
         self.n_items = n_items
         self.latent_dimension = latent_dimension
 
+        self.use_user_bias = use_user_bias
+        self.use_item_bias = use_item_bias
+        self.use_global_bias = use_global_bias
+
         self.user_embeddings = nn.Embedding(self.n_users, self.latent_dimension)
         self.item_embeddings = nn.Embedding(self.n_items, self.latent_dimension)
 
+        if self.use_user_bias:
+            self.user_bias = nn.Embedding(self.n_users, 1)
+        if self.use_item_bias:
+            self.item_bias = nn.Embedding(self.n_items, 1)
+
         self.apply(general_weight_init)
+
+        if self.use_global_bias:
+            self.global_bias = nn.Parameter(torch.zeros(1), requires_grad=True)
 
         self.name = 'SGDMatrixFactorization'
 
         print(f'Built {self.name} module\n'
-              f'- latent_dimension: {self.latent_dimension}')
+              f'- latent_dimension: {self.latent_dimension} \n'
+              f'- use_user_bias: {self.use_user_bias} \n'
+              f'- use_item_bias: {self.use_item_bias} \n'
+              f'- use_global_bias: {self.use_global_bias}')
 
     def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
         u_embed = self.user_embeddings(u_idxs)
@@ -37,11 +53,21 @@ class SGDMatrixFactorization(SGDBasedRecommenderAlgorithm):
 
         out = (u_embed[:, None, :] * i_embed).sum(axis=-1)
 
+        if self.use_user_bias:
+            u_bias = self.user_bias(u_idxs)
+            out += u_bias
+        if self.use_item_bias:
+            i_bias = self.item_bias(i_idxs).squeeze()
+            out += i_bias
+        if self.use_global_bias:
+            out += self.global_bias
+
         return out
 
     @staticmethod
     def build_from_conf(conf: dict, dataset):
-        return SGDMatrixFactorization(dataset.n_users, dataset.n_items, conf['embedding_dim'])
+        return SGDMatrixFactorization(dataset.n_users, dataset.n_items, conf['embedding_dim'], conf['use_user_bias'],
+                                      conf['use_item_bias'], conf['use_global_bias'])
 
 
 class DeepMatrixFactorization(SGDBasedRecommenderAlgorithm):

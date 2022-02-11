@@ -28,7 +28,10 @@ base_hyper_params = {
 
 sgdmf_hyper_params = {
     **base_hyper_params,
-    'embedding_dim': tune.randint(10, 100)
+    'embedding_dim': tune.randint(10, 100),
+    'use_user_bias': tune.choice([True, False]),
+    'use_item_bias': tune.choice([True, False]),
+    'use_global_bias': tune.choice([True, False])
 }
 
 svd_hyper_param = {
@@ -77,7 +80,7 @@ slim_hyper_param = {
 als_hyper_param = {
     **base_param,
     'alpha': tune.randint(1, 100),
-    'factors': tune.randint(1, 4), # Als automatically multiplies this value by 32!
+    'factors': tune.randint(1, 4),  # Als automatically multiplies this value by 32!
     'regularization': tune.loguniform(1e-4, 1e-1),
     'n_iterations': tune.randint(1, 50)
 }
