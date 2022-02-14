@@ -25,10 +25,13 @@ parser.add_argument('--every', '-e', action='store_true', default=False, require
 
 parser.add_argument('--n_samples', '-ns', type=int, default=NUM_SAMPLES, required=False,
                     help='Number of hyperparameters configurations to sample')
-parser.add_argument('--n_gpus', '-g', type=float, default=0.2, required=False,
+parser.add_argument('--n_gpus', '-ng', type=float, default=0.2, required=False,
                     help='Number of gpus per trial (<= 1 values are possible)')
-parser.add_argument('--n_concurrent', '-c', type=int, default=None, required=False,
+parser.add_argument('--n_concurrent', '-nc', type=int, default=None, required=False,
                     help='Number of allowed concurrent trials.')
+parser.add_argument('--n_epochs', '-ne', type=int, default=100, required=False, help='Number of maximum epochs')
+parser.add_argument('--n_workers', '-nw', type=int, default=2, required=False,
+                    help='Number of workers for the training dataloader')
 
 args = parser.parse_args()
 
@@ -40,10 +43,15 @@ every = args.every
 n_samples = args.n_samples
 n_gpus = args.n_gpus
 n_concurrent = args.n_concurrent
+n_epochs = args.n_epochs
+n_workers = args.n_workers
 
 if every:
-    start_multi_dataset(alg, n_gpus=n_gpus, n_concurrent=n_concurrent, n_samples=n_samples)
+    start_multi_dataset(alg, n_gpus=n_gpus, n_concurrent=n_concurrent, n_samples=n_samples, n_epochs=n_epochs,
+                        n_workers=n_workers)
 elif multiple:
-    start_multiple_hyper(alg, dataset, n_gpus=n_gpus, n_concurrent=n_concurrent, n_samples=n_samples)
+    start_multiple_hyper(alg, dataset, n_gpus=n_gpus, n_concurrent=n_concurrent, n_samples=n_samples, n_epochs=n_epochs,
+                         n_workers=n_workers)
 else:
-    start_hyper(alg, dataset, seed, n_gpus=n_gpus, n_concurrent=n_concurrent, n_samples=n_samples)
+    start_hyper(alg, dataset, seed, n_gpus=n_gpus, n_concurrent=n_concurrent, n_samples=n_samples, n_epochs=n_epochs,
+                n_workers=n_workers)

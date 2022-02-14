@@ -20,7 +20,7 @@ from utilities.trainer import ExperimentConfig, Trainer
 from utilities.utils import generate_id, reproducible, NoImprovementsStopper, KeepOnlyTopTrials
 
 
-def load_data(conf: dict, split_set: str):
+def load_data(conf: dict, split_set: str, **kwargs):
     if split_set == 'train':
         train_loader = get_recdataset_dataloader(
             'inter',
@@ -30,7 +30,7 @@ def load_data(conf: dict, split_set: str):
             neg_strategy=conf['train_neg_strategy'] if 'train_neg_strategy' in conf else 'uniform',
             batch_size=conf['batch_size'] if 'batch_size' in conf else 64,
             shuffle=True,
-            num_workers=2
+            num_workers=kwargs['n_workers']
         )
         return train_loader
     elif split_set == 'val':
@@ -61,7 +61,7 @@ def tune_training(conf: dict, checkpoint_dir=None):
     Function executed by ray tune. It corresponds to a single trial.
     """
 
-    train_loader = load_data(conf, 'train')
+    train_loader = load_data(conf, 'train', n_workers=conf['experiment_settings']['n_workers'])
     val_loader = load_data(conf, 'val')
 
     reproducible(conf['seed'])
@@ -72,6 +72,7 @@ def tune_training(conf: dict, checkpoint_dir=None):
         if isinstance(alg, SGDBasedRecommenderAlgorithm):
 
             checkpoint_file = os.path.join(checkpoint_dir, 'best_model.pth')
+            conf['n_epochs'] = conf['experiment_settings']['n_epochs']
             exp_conf = ExperimentConfig.build_from_conf(conf)
             exp_conf.best_model_path = checkpoint_file
 
@@ -121,6 +122,9 @@ def run_train_val(conf: dict, run_name: str, **kwargs):
         TrialPlateauStopper(metric_name, std=1e-3, num_results=5, grace_period=10)
     )
 
+    # Other experiment's settings
+    conf['experiment_settings'] = kwargs
+
     tune.register_trainable(run_name, tune_training)
     analysis = tune.run(
         run_name,
@@ -160,7 +164,10 @@ def run_test(run_name: str, best_config: dict, best_checkpoint=''):
 
     # ---- Test ---- #
     alg = best_config['alg'].value.build_from_conf(best_config, test_loader.dataset)
-    best_checkpoint = os.path.join(best_checkpoint, 'best_model.npz')
+    if isinstance(alg, SGDBasedRecommenderAlgorithm):
+        best_checkpoint = os.path.join(best_checkpoint, 'best_model.pth')
+    else:
+        best_checkpoint = os.path.join(best_checkpoint, 'best_model.npz')
     alg.load_model_from_path(best_checkpoint)
     if best_config['alg'] in [RecAlgorithmsEnum.pop, RecAlgorithmsEnum.rand]:
         metrics_values = evaluate_naive_algorithm(alg, test_loader, best_config['seed'] + 2)

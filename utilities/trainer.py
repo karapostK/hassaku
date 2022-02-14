@@ -103,8 +103,8 @@ class Trainer:
 
         metrics_values = self.val()
         self.best_value = metrics_values[self.optimizing_metric]
-
         print('Init - Avg Val Value {:.3f} \n'.format(self.best_value))
+        self.pointer_to_model.save_model_to_path(self.best_model_path)
 
         for epoch in trange(self.n_epochs):
 
@@ -156,6 +156,7 @@ class Trainer:
         self.model.eval()
         print('Validation started')
 
-        metrics_values = evaluate_recommender_algorithm(self.pointer_to_model, self.val_loader, self.seed + 1, self.device,
+        metrics_values = evaluate_recommender_algorithm(self.pointer_to_model, self.val_loader, self.seed + 1,
+                                                        self.device,
                                                         self.rec_loss)
         return metrics_values

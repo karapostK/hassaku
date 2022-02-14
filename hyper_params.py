@@ -7,7 +7,6 @@ from utilities.rec_losses import RecommenderSystemLossesEnum
 
 base_param = {
     'device': 'cuda' if torch.cuda.is_available() else 'cpu',
-    'n_epochs': 100,
     'eval_neg_strategy': 'uniform',
     'val_batch_size': 256,
 }
