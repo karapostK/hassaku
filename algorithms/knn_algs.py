@@ -61,13 +61,13 @@ class KNNAlgorithm(RecommenderAlgorithm, ABC):
             self.pred_mtx = array_dict['pred_mtx']
 
     @staticmethod
-    def build_from_conf(conf: dict,dataset):
+    def build_from_conf(conf: dict, dataset):
         sim_func_params = conf['sim_func_params']
         k = conf['k']
         sim_func = SimilarityFunctionEnum[sim_func_params['sim_func_name']]
         alpha = sim_func_params['alpha'] if 'alpha' in sim_func_params else None
         beta = sim_func_params['beta'] if 'beta' in sim_func_params else None
-        if conf['alg'] == UserKNN:
+        if conf['alg'].value == UserKNN:
             return UserKNN(sim_func, k, alpha=alpha, beta=beta)
         else:
             return ItemKNN(sim_func, k, alpha=alpha, beta=beta)
