@@ -6,7 +6,6 @@ channels:
 dependencies:
   - _libgcc_mutex=0.1=conda_forge
   - _openmp_mutex=4.5=1_llvm
-  - blas=1.0=mkl
   - bottleneck=1.3.2=py38h6c62de6_5
   - brotlipy=0.7.0=py38h497a2fe_1001
   - ca-certificates=2021.10.8=ha878542_0
@@ -43,10 +42,6 @@ dependencies:
   - libstdcxx-ng=11.2.0=he4da1e4_12
   - libuv=1.40.0=h7b6447c_0
   - llvm-openmp=12.0.1=h4bd325d_1
-  - mkl=2020.2=256
-  - mkl-service=2.3.0=py38he904b0f_0
-  - mkl_fft=1.3.0=py38h54f3939_0
-  - mkl_random=1.1.1=py38h0573a6f_0
   - ncurses=6.3=h7f8727e_2
   - networkx=2.5.1=pyhd8ed1ab_0
   - numexpr=2.7.3=py38hb2eb853_0
@@ -107,4 +102,3 @@ dependencies:
     - tabulate==0.8.9
     - tensorboardx==2.4.1
     - wrapt==1.13.3
-prefix: /home/alessandro/anaconda3/envs/hassaku
