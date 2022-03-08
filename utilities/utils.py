@@ -160,6 +160,7 @@ class KeepOnlyTopTrials(Callback):
 
         self._top_maxs: List[float] = [-np.inf] * n_tops
         self._top_paths: List[str] = [''] * n_tops
+        self._top_confs: List[dict] = [{}] * n_tops
 
     def on_trial_result(self, iteration: int, trials: List["Trial"],
                         trial: "Trial", result: Dict, **info):
@@ -186,6 +187,7 @@ class KeepOnlyTopTrials(Callback):
             old_trial_path = self._top_paths[argmin]
             self._top_maxs[argmin] = trial_max
             self._top_paths[argmin] = trial.logdir
+            self._top_confs[argmin] = trial.config
 
             # Remove the previous-best
             # N.B. The framework assumes that there is only a single checkpoint!
@@ -201,3 +203,16 @@ class KeepOnlyTopTrials(Callback):
             checkpoint_lists = glob.glob(trial_checkpoint)
             for checkpoint_file in checkpoint_lists:
                 os.remove(checkpoint_file)
+
+    def get_best_trial(self):
+        """
+        Get the values, configuration, and path of the best model
+        NB. This method should be called only at the end of all experiments!
+        """
+        argmax = np.argmax(self._top_maxs)
+
+        best_value = self._top_maxs[argmax]
+        best_path = os.path.join(self._top_paths[argmax], 'checkpoint_000000')
+        best_conf = self._top_confs[argmax]
+
+        return best_value, best_path, best_conf

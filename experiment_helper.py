@@ -2,13 +2,13 @@ import os
 from collections import defaultdict
 
 import numpy as np
+import wandb
 from ray import tune
 from ray.tune.integration.wandb import WandbLoggerCallback
 from ray.tune.schedulers import ASHAScheduler
 from ray.tune.stopper import CombinedStopper, TrialPlateauStopper
 from ray.tune.suggest.hyperopt import HyperOptSearch
 
-import wandb
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm
 from data.dataset import get_recdataset_dataloader
 from hyper_params import alg_param
@@ -141,9 +141,11 @@ def run_train_val(conf: dict, run_name: str, **kwargs):
         mode='max',
         fail_fast=True,
     )
-    best_trial = analysis.get_best_trial(metric_name, 'max', scope='all')
-    best_config = best_trial.config
-    best_checkpoint = analysis.get_best_checkpoint(best_trial, metric_name, 'max')
+
+    best_value, best_checkpoint, best_config = keep_callback.get_best_trial()
+    # best_trial = analysis.get_best_trial(metric_name, 'max', scope='all')
+    # best_config = best_trial.config
+    # best_checkpoint = analysis.get_best_checkpoint(best_trial, metric_name, 'max')
 
     print('Train and Val ended')
     print(f'Best configuration is: \n {best_config}')
