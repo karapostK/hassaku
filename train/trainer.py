@@ -3,10 +3,11 @@ from ray import tune
 from torch import nn
 from torch.utils import data
 from tqdm import trange
-from utilities.consts import OPTIMIZING_METRIC, SINGLE_SEED
-from utilities.rec_losses import RecommenderSystemLossesEnum, RecommenderSystemLoss
+
 
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm
+from consts.consts import SINGLE_SEED, OPTIMIZING_METRIC
+from train.rec_losses import RecommenderSystemLoss, RecommenderSystemLossesEnum
 from utilities.eval import evaluate_recommender_algorithm
 
 

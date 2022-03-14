@@ -7,7 +7,7 @@ import torch
 from scipy import sparse as sp
 
 from algorithms.base_classes import RecommenderAlgorithm
-from train.similarities import SimilarityFunctionEnum
+from utilities.similarities import SimilarityFunctionEnum
 
 
 class KNNAlgorithm(RecommenderAlgorithm, ABC):

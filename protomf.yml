@@ -58,21 +58,26 @@ dependencies:
     - attrs==21.4.0
     - charset-normalizer==2.0.12
     - click==8.0.4
+    - cloudpickle==2.0.0
     - deprecated==1.2.13
     - docker-pycreds==0.4.0
     - filelock==3.6.0
+    - future==0.18.2
     - gitdb==4.0.9
     - gitpython==3.1.27
     - grpcio==1.43.0
+    - hyperopt==0.2.7
     - idna==3.3
     - importlib-resources==5.4.0
     - jsonschema==4.4.0
     - msgpack==1.0.3
+    - networkx==2.7.1
     - packaging==21.3
     - pathtools==0.1.2
     - promise==2.3
     - protobuf==3.19.4
     - psutil==5.9.0
+    - py4j==0.10.9.3
     - pyparsing==3.0.7
     - pyrsistent==0.18.1
     - pyyaml==6.0
@@ -91,4 +96,4 @@ dependencies:
     - wrapt==1.14.0
     - yaspin==2.1.0
     - zipp==3.7.0
-prefix: /home/alessandro/miniconda3/envs/protomf
+prefix: /home/alessandro/anaconda3/envs/protomf

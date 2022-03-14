@@ -201,4 +201,4 @@ class FullEvalDataset(data.Dataset):
         return self.n_users
 
     def __getitem__(self, user_index):
-        return user_index, np.arange(self.n_items), self.evaluation_matrix[user_index].toarray().squeeze()
+        return user_index, np.arange(self.n_items), self.evaluation_matrix[user_index].toarray().squeeze().astype('float32')
