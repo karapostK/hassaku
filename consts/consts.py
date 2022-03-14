@@ -10,7 +10,7 @@ NUM_SAMPLES = 100
 # --- Evaluation Constants --- #
 K_VALUES = [1, 3, 5, 10, 20, 50, 100]  # K value for the evaluation metrics
 
-OPTIMIZING_METRIC = 'hit_ratio@10'  # Which metric will be used to assess during validation.
+OPTIMIZING_METRIC = 'ndcg@10'  # Which metric will be used to assess during validation.
 # --- Logger Constants --- #
 PROJECT_NAME = 'advprotomf'
 
