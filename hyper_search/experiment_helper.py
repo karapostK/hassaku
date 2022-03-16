@@ -116,7 +116,7 @@ def run_train_val(conf: dict, run_name: str, **kwargs):
     # Stopper
     stopper = CombinedStopper(
         NoImprovementsStopper(metric_name, max_patience=10),
-        TrialPlateauStopper(metric_name, std=1e-3, num_results=5, grace_period=10)
+        TrialPlateauStopper(metric_name, std=1e-5, num_results=5, grace_period=10)
     )
 
     # Other experiment's settings
