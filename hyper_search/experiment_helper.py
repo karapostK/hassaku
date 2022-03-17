@@ -109,7 +109,8 @@ def run_train_val(conf: dict, run_name: str, **kwargs):
 
     # Logger
     log_callback = WandbLoggerCallback(project=PROJECT_NAME, log_config=True, api_key_file=WANDB_API_KEY_PATH,
-                                       reinit=True, force=True, job_type='train/val', tags=run_name.split('_'))
+                                       reinit=True, force=True, job_type='train/val', tags=run_name.split('_'),
+                                       entity='jku-mms')
 
     keep_callback = KeepOnlyTopTrials(metric_name, n_tops=3)
 
@@ -123,7 +124,7 @@ def run_train_val(conf: dict, run_name: str, **kwargs):
     conf['experiment_settings'] = kwargs
 
     tune.register_trainable(run_name, tune_training)
-    analysis = tune.run(
+    tune.run(
         run_name,
         config=conf,
         name=generate_id(prefix=run_name),
