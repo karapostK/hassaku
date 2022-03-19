@@ -2,6 +2,7 @@ import os
 from collections import defaultdict
 
 import numpy as np
+import torch
 import wandb
 from ray import tune
 from ray.tune.integration.wandb import WandbLoggerCallback
@@ -13,7 +14,7 @@ from torch.utils.data import DataLoader
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm
 from algorithms.naive_algs import PopularItems, RandomItems
 from consts.consts import PROJECT_NAME, WANDB_API_KEY_PATH, SEED_LIST, DATA_PATH, OPTIMIZING_METRIC, SINGLE_SEED, \
-    ENTITY_NAME
+    ENTITY_NAME, EVAL_BATCH_SIZE
 from consts.enums import RecAlgorithmsEnum, RecDatasetsEnum
 from data.dataset import TrainRecDataset, FullEvalDataset
 from hyper_search.hyper_params import alg_param
@@ -123,6 +124,8 @@ def run_train_val(conf: dict, run_name: str, **kwargs):
     )
 
     # Other experiment's settings
+    conf['device'] = 'cuda' if kwargs['n_gpus'] > 0 and torch.cuda.is_available() else 'cpu'
+    conf['eval_batch_size'] = EVAL_BATCH_SIZE
     conf['experiment_settings'] = kwargs
 
     tune.register_trainable(run_name, tune_training)

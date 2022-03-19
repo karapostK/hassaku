@@ -23,8 +23,7 @@ class RecBinaryCrossEntropy(RecommenderSystemLoss):
         It computes the binary cross entropy loss with negative sampling, expressed by the formula:
                                         -∑_j log(x_ui) + log(1 - x_uj)
         where x_ui and x_uj are the prediction for user u on item i and j, respectively. Item i positive instance while
-        Item j is a negative instance. The Sum is carried out across the different negative instances. In other words
-        the positive item is weighted as many as negative items are considered.
+        Item j is a negative instance.
 
         :param logits: Logits values from the network. The first column always contain the values of positive instances.
                 Shape is (batch_size, 1 + n_neg).
@@ -32,10 +31,7 @@ class RecBinaryCrossEntropy(RecommenderSystemLoss):
 
         :return: The binary cross entropy as computed above
         """
-        weights = torch.ones_like(logits)
-        weights[:, 0] = logits.shape[1] - 1
-        # todo: what about weights here???
-        loss = nn.BCEWithLogitsLoss(weights.flatten(), reduction=self.aggregator)(logits.flatten(), labels.flatten())
+        loss = nn.BCEWithLogitsLoss(reduction=self.aggregator)(logits.flatten(), labels.flatten())
 
         return loss
 

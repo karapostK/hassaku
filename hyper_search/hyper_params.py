@@ -1,31 +1,25 @@
-import torch
 from hyperopt import hp
 from ray import tune
 
 from consts.enums import RecAlgorithmsEnum
 from train.rec_losses import RecommenderSystemLossesEnum
 
-base_param = {
-    'device': 'cuda' if torch.cuda.is_available() else 'cpu',
-    'eval_batch_size': 256,
-}
-
 base_hyper_params = {
-    **base_param,
     'train_neg_strategy': tune.choice(['popular', 'uniform']),
     'rec_loss': tune.choice([RecommenderSystemLossesEnum.bce, RecommenderSystemLossesEnum.bpr,
                              RecommenderSystemLossesEnum.sampled_softmax]),
-    'batch_size': tune.lograndint(64, 512, 2),  # todo: maybe drop it
+    'batch_size': tune.choice([128, 256, 512]),
+    'neg_train': tune.randint(1, 20),
     'optim_param': {
         'optim': tune.choice(['adam', 'adagrad']),
-        'wd': tune.loguniform(1e-4, 1e-2),
-        'lr': tune.loguniform(1e-4, 1e-1)
+        'wd': tune.loguniform(1e-5, 1e-2),
+        'lr': tune.loguniform(1e-4, 1e-2)
     },
 }
 
 sgdmf_hyper_params = {
     **base_hyper_params,
-    'embedding_dim': tune.randint(10, 100),
+    'embedding_dim': tune.choice([8, 16, 32, 64, 128, 256, 512]),
     'use_user_bias': tune.choice([True, False]),
     'use_item_bias': tune.choice([True, False]),
     'use_global_bias': tune.choice([True, False])
@@ -38,7 +32,6 @@ sgdmf_hyper_params = {
 # }
 
 knn_hyper_param = {
-    **base_param,
     'k': tune.randint(1, 100),
     'sim_func_params': hp.choice('sim_func_name', [
         {
@@ -90,6 +83,6 @@ alg_param = {
     RecAlgorithmsEnum.uprotomf: protomf_hyper_param,
     RecAlgorithmsEnum.iprotomf: protomf_hyper_param,
     RecAlgorithmsEnum.uiprotomf: uiprotomf_hyper_param,
-    RecAlgorithmsEnum.pop: base_param,
-    RecAlgorithmsEnum.rand: base_param
+    RecAlgorithmsEnum.pop: {},
+    RecAlgorithmsEnum.rand: {}
 }
