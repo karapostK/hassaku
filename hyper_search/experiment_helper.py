@@ -130,7 +130,7 @@ def run_train_val(conf: dict, run_name: str, **kwargs):
         run_name,
         config=conf,
         name=generate_id(prefix=run_name),
-        resources_per_trial={'gpu': kwargs['n_gpus']},
+        resources_per_trial={'gpu': kwargs['n_gpus'], 'cpu': kwargs['n_cpus']},
         scheduler=scheduler,
         search_alg=search_alg,
         num_samples=kwargs['n_samples'],
