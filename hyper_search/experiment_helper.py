@@ -11,6 +11,7 @@ from ray.tune.suggest.hyperopt import HyperOptSearch
 from torch.utils.data import DataLoader
 
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm
+from algorithms.naive_algs import PopularItems, RandomItems
 from consts.consts import PROJECT_NAME, WANDB_API_KEY_PATH, SEED_LIST, DATA_PATH, OPTIMIZING_METRIC, SINGLE_SEED
 from consts.enums import RecAlgorithmsEnum, RecDatasetsEnum
 from data.dataset import TrainRecDataset, FullEvalDataset
@@ -31,7 +32,7 @@ def load_data(conf: dict, split_set: str, **kwargs):
             ),
             batch_size=conf['batch_size'] if 'batch_size' in conf else 64,
             shuffle=True,
-            num_workers=kwargs['n_workers']
+            num_workers=kwargs['n_workers'] if 'n_workers' in kwargs else 2
         )
 
     elif split_set == 'val':
@@ -160,12 +161,16 @@ def run_test(run_name: str, best_config: dict, best_checkpoint=''):
                job_type='test', tags=run_name.split('_'))
 
     # ---- Test ---- #
-    alg = best_config['alg'].value.build_from_conf(best_config, test_loader.dataset)
-    if isinstance(alg, SGDBasedRecommenderAlgorithm):
-        best_checkpoint = os.path.join(best_checkpoint, 'best_model.pth')
+    if best_config['alg'].value == PopularItems or best_config['alg'].value == RandomItems:
+        train_loader = load_data(best_config, 'train')
+        alg = best_config['alg'].value.build_from_conf(best_config, train_loader.dataset)
     else:
-        best_checkpoint = os.path.join(best_checkpoint, 'best_model.npz')
-    alg.load_model_from_path(best_checkpoint)
+        alg = best_config['alg'].value.build_from_conf(best_config, test_loader.dataset)
+        if isinstance(alg, SGDBasedRecommenderAlgorithm):
+            best_checkpoint = os.path.join(best_checkpoint, 'best_model.pth')
+        else:
+            best_checkpoint = os.path.join(best_checkpoint, 'best_model.npz')
+        alg.load_model_from_path(best_checkpoint)
 
     metrics_values = evaluate_recommender_algorithm(alg, test_loader, best_config['seed'] + 2)
 
@@ -198,8 +203,12 @@ def start_hyper(alg: RecAlgorithmsEnum, dataset: RecDatasetsEnum, seed: int = SI
 
     # ---- Train/Validation ---- #
 
-    print('Start Train/Val')
-    best_config, best_checkpoint = run_train_val(conf, run_name, **kwargs)
+    if alg.value == PopularItems or alg.value == RandomItems:
+        # Skipping training and validation for naive algorithms
+        best_config, best_checkpoint = conf, ''
+    else:
+        print('Start Train/Val')
+        best_config, best_checkpoint = run_train_val(conf, run_name, **kwargs)
 
     print('Start Test')
     metric_values = run_test(run_name, best_config, best_checkpoint)

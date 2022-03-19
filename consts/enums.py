@@ -2,6 +2,7 @@ import enum
 from enum import Enum
 
 from algorithms.knn_algs import UserKNN, ItemKNN
+from algorithms.naive_algs import PopularItems, RandomItems
 from algorithms.sgd_alg import SGDMatrixFactorization, UProtoMF, UIProtoMF, IProtoMF, SGDBaseline
 
 
@@ -13,6 +14,8 @@ class RecAlgorithmsEnum(Enum):
     iknn = ItemKNN
     sgdmf = SGDMatrixFactorization
     sgdbias = SGDBaseline
+    pop = PopularItems
+    rand = RandomItems
     # rbmf = RBMF
     uprotomf = UProtoMF
     iprotomf = IProtoMF

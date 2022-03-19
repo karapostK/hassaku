@@ -90,4 +90,6 @@ alg_param = {
     RecAlgorithmsEnum.uprotomf: protomf_hyper_param,
     RecAlgorithmsEnum.iprotomf: protomf_hyper_param,
     RecAlgorithmsEnum.uiprotomf: uiprotomf_hyper_param,
+    RecAlgorithmsEnum.pop: base_param,
+    RecAlgorithmsEnum.rand: base_param
 }
