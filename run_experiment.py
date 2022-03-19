@@ -17,7 +17,7 @@ parser.add_argument('--dataset', '-d', type=str, help='Recommender System Datase
                     choices=[dataset.name for dataset in RecDatasetsEnum], required=False, default='ml1m')
 
 parser.add_argument('--seed', '-s', type=int, default=SINGLE_SEED, required=False,
-                    help='Seed for initialization and sampling. NB. val_seed = seed + 1 and test_seed = seed + 2')
+                    help='Seed for initialization and sampling.')
 parser.add_argument('--multiple', '-mp', action='store_true', default=False, required=False,
                     help='Whether to run all the experiments over a single dataset over the specified seeds (see consts.py). Overrides seeds.')
 parser.add_argument('--every', '-e', action='store_true', default=False, required=False,

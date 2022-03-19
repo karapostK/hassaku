@@ -12,7 +12,8 @@ from torch.utils.data import DataLoader
 
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm
 from algorithms.naive_algs import PopularItems, RandomItems
-from consts.consts import PROJECT_NAME, WANDB_API_KEY_PATH, SEED_LIST, DATA_PATH, OPTIMIZING_METRIC, SINGLE_SEED
+from consts.consts import PROJECT_NAME, WANDB_API_KEY_PATH, SEED_LIST, DATA_PATH, OPTIMIZING_METRIC, SINGLE_SEED, \
+    ENTITY_NAME
 from consts.enums import RecAlgorithmsEnum, RecDatasetsEnum
 from data.dataset import TrainRecDataset, FullEvalDataset
 from hyper_search.hyper_params import alg_param
@@ -85,7 +86,7 @@ def tune_training(conf: dict, checkpoint_dir=None):
             alg.fit(train_loader.dataset.iteration_matrix)
 
             # -- Validation --
-            metrics_values = evaluate_recommender_algorithm(alg, val_loader, conf['seed'] + 1)
+            metrics_values = evaluate_recommender_algorithm(alg, val_loader, conf['seed'])
             tune.report(**metrics_values)
 
             # -- Save --
@@ -111,7 +112,7 @@ def run_train_val(conf: dict, run_name: str, **kwargs):
     # Logger
     log_callback = WandbLoggerCallback(project=PROJECT_NAME, log_config=True, api_key_file=WANDB_API_KEY_PATH,
                                        reinit=True, force=True, job_type='train/val', tags=run_name.split('_'),
-                                       entity='jku-mms')
+                                       entity=ENTITY_NAME)
 
     keep_callback = KeepOnlyTopTrials(metric_name, n_tops=3)
 
@@ -152,13 +153,13 @@ def run_train_val(conf: dict, run_name: str, **kwargs):
 
 def run_test(run_name: str, best_config: dict, best_checkpoint=''):
     """
-    Runs the test procedure. Notice that the evaluation of the recommendation uses conf['seed'] + 2!
+    Runs the test procedure.
     """
     test_loader = load_data(best_config, 'test')
 
     wandb.login()
     wandb.init(project=PROJECT_NAME, group='test', config=best_config, name=run_name, force=True,
-               job_type='test', tags=run_name.split('_'))
+               job_type='test', tags=run_name.split('_'), entity=ENTITY_NAME)
 
     # ---- Test ---- #
     if best_config['alg'].value == PopularItems or best_config['alg'].value == RandomItems:
@@ -172,7 +173,7 @@ def run_test(run_name: str, best_config: dict, best_checkpoint=''):
             best_checkpoint = os.path.join(best_checkpoint, 'best_model.npz')
         alg.load_model_from_path(best_checkpoint)
 
-    metrics_values = evaluate_recommender_algorithm(alg, test_loader, best_config['seed'] + 2)
+    metrics_values = evaluate_recommender_algorithm(alg, test_loader, best_config['seed'])
 
     wandb.log(metrics_values)
 
@@ -184,7 +185,6 @@ def run_test(run_name: str, best_config: dict, best_checkpoint=''):
 def start_hyper(alg: RecAlgorithmsEnum, dataset: RecDatasetsEnum, seed: int = SINGLE_SEED, **kwargs) -> dict:
     print('Starting Hyperparameter Optimization')
     print(f'Dataset is {dataset.name} - Seed is {seed}')
-    print('N.B. Val seed is obtained by seed + 1, Test seed by seed + 2 ')
 
     # ---- Algorithm's parameters and hyperparameters ---- #
     conf = alg_param[alg]
@@ -196,10 +196,7 @@ def start_hyper(alg: RecAlgorithmsEnum, dataset: RecDatasetsEnum, seed: int = SI
     # Seed
     conf['seed'] = seed
 
-    # Hostname
-    host_name = os.uname()[1][:2]
-
-    run_name = f'{alg.name}_{dataset.name}_{host_name}_{seed}'
+    run_name = f'{alg.name}_{dataset.name}_{seed}'
 
     # ---- Train/Validation ---- #
 
@@ -221,13 +218,36 @@ def start_multiple_hyper(alg: RecAlgorithmsEnum, dataset: RecDatasetsEnum, **kwa
     print('Starting Multi-Hyperparameter Optimization')
     print(f'Dataset is {dataset.name} - Seeds are {SEED_LIST}')
 
+    run_name = f'{alg.name}_{dataset.name}'
+
+    # Checking whether we already run the experiments
+    wapi = wandb.Api()
+    multi_dataset_runs = wapi.runs(f'{ENTITY_NAME}/{PROJECT_NAME}', filters={'group': 'aggr_results'})
+    multi_dataset_runs_names = set([x.name for x in multi_dataset_runs])
+    if run_name in multi_dataset_runs_names:
+        print(f'\n\n\n'
+              f'Dataset <<{dataset.name}>> skipped since results are already available'
+              f'\n\n\n')
+        return
+
+    # Checking whether we already partially run the experiments
+    multi_hyper_runs = wapi.runs(f'{ENTITY_NAME}/{PROJECT_NAME}', filters={'group': 'test'})
+    multi_hyper_runs_names = set([x.name for x in multi_hyper_runs])
+
     # Accumulate the results in a dictionary: e.g. results_list['ndcg@10'] = [0.8,0.5,0.3]
     results_dict = defaultdict(list)
 
     # Carry out the experiment
     for seed in SEED_LIST:
-        # TODO: Query the repository and skip already-done experiments
-        metric_values = start_hyper(alg, dataset, seed, **kwargs)
+        sub_run_name = f'{alg.name}_{dataset.name}_{seed}'
+        if sub_run_name in multi_hyper_runs_names:
+            print(f'\n\n\n'
+                  f'Dataset <<{dataset.name}>> and seed <<{seed}>> skipped since results are already available'
+                  f'\n\n\n')
+            run = [x for x in multi_hyper_runs if x.name == sub_run_name][0]
+            metric_values = {k: v for k, v in run.summary.items() if k[0] != '_'}
+        else:
+            metric_values = start_hyper(alg, dataset, seed, **kwargs)
         for key in metric_values:
             results_dict[key].append(metric_values[key])
 
@@ -241,7 +261,6 @@ def start_multiple_hyper(alg: RecAlgorithmsEnum, dataset: RecDatasetsEnum, **kwa
     with open(WANDB_API_KEY_PATH) as wandb_file:
         wandb_api_key = wandb_file.read()
 
-    run_name = f'{alg.name}_{dataset.name}'
     wandb.login(key=wandb_api_key)
     wandb.init(project=PROJECT_NAME, group='aggr_results', name=run_name, force=True, job_type='test',
                tags=run_name.split('_'))
@@ -252,5 +271,17 @@ def start_multiple_hyper(alg: RecAlgorithmsEnum, dataset: RecDatasetsEnum, **kwa
 
 def start_multi_dataset(alg: RecAlgorithmsEnum, **kwargs):
     print('Starting Multi-dataset Multi-Hyperparameter Optimization')
+
+    # Checking whether we already run the experiments
+    wapi = wandb.Api()
+    multi_dataset_runs = wapi.runs(f'{ENTITY_NAME}/{PROJECT_NAME}', filters={'group': 'aggr_results'})
+    multi_dataset_runs_names = set([x.name for x in multi_dataset_runs])
+
     for dataset in RecDatasetsEnum:
-        start_multiple_hyper(alg, dataset, **kwargs)
+        run_name = f'{alg.name}_{dataset.name}'
+        if run_name in multi_dataset_runs_names:
+            print(f'\n\n\n'
+                  f'Dataset <<{dataset.name}>> skipped since results are already available'
+                  f'\n\n\n')
+        else:
+            start_multiple_hyper(alg, dataset, **kwargs)
