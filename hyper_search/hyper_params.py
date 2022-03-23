@@ -6,8 +6,7 @@ from train.rec_losses import RecommenderSystemLossesEnum
 
 base_hyper_params = {
     'train_neg_strategy': tune.choice(['popular', 'uniform']),
-    'rec_loss': tune.choice([RecommenderSystemLossesEnum.bce, RecommenderSystemLossesEnum.bpr,
-                             RecommenderSystemLossesEnum.sampled_softmax]),
+    'rec_loss': tune.choice([loss.name for loss in RecommenderSystemLossesEnum]),
     'batch_size': tune.choice([128, 256, 512]),
     'neg_train': tune.randint(1, 20),
     'optim_param': {
@@ -31,8 +30,17 @@ sgdmf_hyper_params = {
 #    'lam': tune.loguniform(1e-4, 1e-1)
 # }
 
+acf_hyper_params = {
+    **base_hyper_params,
+    'latent_dimension': tune.choice([8, 16, 32, 64, 128, 256, 512]),
+    'n_anchors': tune.randint(10, 100),
+    'delta_exc': tune.loguniform(1e-3, 10),
+    'delta_inc': tune.loguniform(1e-3, 10),
+    'loss_aggregator': 'sum'
+}
+
 knn_hyper_param = {
-    'k': tune.randint(1, 100),
+    'k': tune.randint(5, 1000),
     'sim_func_params': hp.choice('sim_func_name', [
         {
             'sim_func_name': 'jaccard'
@@ -84,5 +92,6 @@ alg_param = {
     RecAlgorithmsEnum.iprotomf: protomf_hyper_param,
     RecAlgorithmsEnum.uiprotomf: uiprotomf_hyper_param,
     RecAlgorithmsEnum.pop: {},
-    RecAlgorithmsEnum.rand: {}
+    RecAlgorithmsEnum.rand: {},
+    RecAlgorithmsEnum.acf: acf_hyper_params
 }

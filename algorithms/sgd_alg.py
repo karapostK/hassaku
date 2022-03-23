@@ -99,6 +99,85 @@ class SGDMatrixFactorization(SGDBasedRecommenderAlgorithm):
                                       conf['use_item_bias'], conf['use_global_bias'])
 
 
+class ACF(SGDBasedRecommenderAlgorithm):
+    """
+    Implements Anchor-based Collaborative Filtering by Barkan et al.(https://dl.acm.org/doi/pdf/10.1145/3459637.3482056)
+    NB. Loss aggregation has to be performed differently in order to have the regularization losses in the same size
+    """
+
+    def __init__(self, n_users: int, n_items: int, latent_dimension: int = 100, n_anchors: int = 20,
+                 delta_exc: float = 1e-1, delta_inc: float = 1e-2):
+        super().__init__()
+
+        self.n_users = n_users
+        self.n_items = n_items
+        self.latent_dimension = latent_dimension
+        self.n_anchors = n_anchors
+        self.delta_exc = delta_exc
+        self.delta_inc = delta_inc
+
+        self.anchors = nn.Parameter(torch.randn(self.n_anchors, self.latent_dimension), requires_grad=True)
+
+        self.user_embed = nn.Embedding(self.n_users, self.latent_dimension)
+        self.item_embed = nn.Embedding(self.n_items, self.latent_dimension)
+
+        self.user_embed.apply(general_weight_init)
+        self.item_embed.apply(general_weight_init)
+
+        self._acc_exc = 0
+        self._acc_inc = 0
+
+        self.name = 'ACF'
+
+        print(f'Built {self.name} module\n'
+              f'- latent_dimension: {self.latent_dimension} \n'
+              f'- n_anchors: {self.n_anchors} \n'
+              f'- delta_exc: {self.delta_exc} \n'
+              f'- delta_inc: {self.delta_inc}')
+
+    def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
+        # User pass
+        u_embed = self.user_embed(u_idxs)
+
+        c_u = u_embed @ self.anchors.T  # [batch_size, n_anchors]
+        c_u = nn.Softmax(dim=-1)(c_u)
+
+        u_anc = c_u @ self.anchors  # [batch_size, latent_dimension]
+
+        # Item pass
+        i_embed = self.item_embed(i_idxs)
+        c_i = i_embed @ self.anchors.T  # [batch_size, n_neg_p_1, latent_dimension]
+        c_i = nn.Softmax(dim=-1)(c_i)
+
+        i_anc = c_i @ self.anchors
+
+        dots = (u_anc.unsqueeze(-2) * i_anc).sum(dim=-1)
+
+        # Regularization losses
+
+        # Exclusiveness constraint
+        exc = - (c_i * torch.log(c_i)).sum()
+
+        # Inclusiveness constraint
+        q_k = c_i.sum(dim=[0, 1]) / c_i.sum()  # n_anchors
+        inc = - (q_k * torch.log(q_k)).sum()
+
+        self._acc_exc += exc
+        self._acc_inc += inc
+
+        return dots
+
+    def get_and_reset_other_loss(self) -> float:
+        _acc_exc, _acc_inc = self._acc_exc, self._acc_inc
+        self._acc_exc = self._acc_inc = 0
+        return self.delta_exc * _acc_exc - self.delta_inc * _acc_inc
+
+    @staticmethod
+    def build_from_conf(conf: dict, dataset: data.Dataset):
+        return ACF(dataset.n_users, dataset.n_items, conf['latent_dimension'], conf['n_anchors'],
+                   conf['delta_exc'], conf['delta_inc'])
+
+
 class UProtoMF(SGDBasedRecommenderAlgorithm):
     """
     Implements the ProtoMF model with user prototypes

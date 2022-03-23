@@ -3,7 +3,7 @@ from enum import Enum
 
 from algorithms.knn_algs import UserKNN, ItemKNN
 from algorithms.naive_algs import PopularItems, RandomItems
-from algorithms.sgd_alg import SGDMatrixFactorization, UProtoMF, UIProtoMF, IProtoMF, SGDBaseline
+from algorithms.sgd_alg import SGDMatrixFactorization, UProtoMF, UIProtoMF, IProtoMF, SGDBaseline, ACF
 
 
 # from algorithms.mf_algs import RBMF
@@ -20,6 +20,7 @@ class RecAlgorithmsEnum(Enum):
     uprotomf = UProtoMF
     iprotomf = IProtoMF
     uiprotomf = UIProtoMF
+    acf = ACF
 
 
 class RecDatasetsEnum(Enum):

@@ -4,10 +4,9 @@ from torch import nn
 from torch.utils import data
 from tqdm import trange
 
-
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm
 from consts.consts import SINGLE_SEED, OPTIMIZING_METRIC
-from train.rec_losses import RecommenderSystemLoss, RecommenderSystemLossesEnum
+from train.rec_losses import RecommenderSystemLossesEnum
 from utilities.eval import evaluate_recommender_algorithm
 
 
@@ -17,21 +16,26 @@ class ExperimentConfig:
     """
 
     def __init__(self, n_epochs: int = 100, device: str = 'cuda',
-                 rec_loss: RecommenderSystemLoss = RecommenderSystemLossesEnum.bce.value(), lr: float = 1e-3,
-                 wd: float = 1e-4, optim_type: 'str' = 'adam', best_model_path: str = './best_model.npz',
-                 seed=SINGLE_SEED):
+                 rec_loss: str = 'bce', lr: float = 1e-3,
+                 wd: float = 1e-4, optim_type: str = 'adam', best_model_path: str = './best_model.npz',
+                 seed=SINGLE_SEED, loss_aggregator: str = 'mean'):
 
         assert n_epochs > 0, f"Number of epochs ({n_epochs}) should be positive"
         assert device in ['cuda', 'cpu'], f"Device ({device}) not valid"
+        assert rec_loss in [rec_loss.name for rec_loss in
+                            RecommenderSystemLossesEnum], f"Rec loss ({rec_loss}) not implemented"
         assert lr > 0 and wd >= 0, f"Learning rate ({lr}) and Weight decay ({wd}) should be positive"
         assert optim_type in ['adam', 'adagrad'], f"Optimizer ({optim_type}) not implemented"
+        assert loss_aggregator in ['mean', 'sum'], f"Loss aggregator ({loss_aggregator}) not implemented"
+
         """
         :param best_model_path: path whereto save the best model during training
         """
 
         self.n_epochs = n_epochs
         self.device = device
-        self.rec_loss = rec_loss
+        self.loss_aggregator = loss_aggregator
+        self.rec_loss = RecommenderSystemLossesEnum[rec_loss].value(self.loss_aggregator)
         self.lr = lr
         self.wd = wd
         self.best_model_path = best_model_path
@@ -46,12 +50,13 @@ class ExperimentConfig:
     def build_from_conf(conf: dict):
 
         return ExperimentConfig(n_epochs=conf['n_epochs'],
-                                rec_loss=conf['rec_loss'].value(),
+                                rec_loss=conf['rec_loss'],
                                 lr=conf['optim_param']['lr'],
                                 wd=conf['optim_param']['wd'],
                                 optim_type=conf['optim_param']['optim'],
                                 device=conf['device'] if 'device' in conf else 'cuda',
-                                seed=conf['seed'])
+                                seed=conf['seed'],
+                                loss_aggregator=conf['loss_aggregator'] if 'loss_aggregator' in conf else 'mean')
 
 
 class Trainer:
