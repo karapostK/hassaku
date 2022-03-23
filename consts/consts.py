@@ -9,7 +9,7 @@ NUM_SAMPLES = 100
 
 # --- Evaluation Constants --- #
 K_VALUES = [1, 3, 5, 10, 20, 50, 100]  # K value for the evaluation metrics
-EVAL_BATCH_SIZE = 1024
+EVAL_BATCH_SIZE = 32
 OPTIMIZING_METRIC = 'ndcg@10'  # Which metric will be used to assess during validation.
 # --- Logger Constants --- #
 ENTITY_NAME = 'jku-mms'

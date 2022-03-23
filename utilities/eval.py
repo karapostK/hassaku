@@ -149,6 +149,9 @@ def evaluate_recommender_algorithm(alg: RecommenderAlgorithm, eval_loader: DataL
 
         out = alg.predict(u_idxs, i_idxs)
 
+        if not isinstance(out, torch.Tensor):
+            out = torch.tensor(out).to(device)
+
         if isinstance(alg, SGDBasedRecommenderAlgorithm) and rec_loss is not None:
             eval_loss += rec_loss.compute_loss(out, labels).item()
             eval_loss += alg.get_and_reset_other_loss()
