@@ -32,7 +32,7 @@ sgdmf_hyper_params = {
 
 acf_hyper_params = {
     **base_hyper_params,
-    'latent_dimension': tune.choice([8, 16, 32, 64, 128, 256, 512]),
+    'embedding_dim': tune.choice([8, 16, 32, 64, 128, 256, 512]),
     'n_anchors': tune.randint(10, 100),
     'delta_exc': tune.loguniform(1e-3, 10),
     'delta_inc': tune.loguniform(1e-3, 10),
@@ -66,7 +66,7 @@ knn_hyper_param = {
 
 protomf_hyper_param = {
     **base_hyper_params,
-    'latent_dimension': tune.randint(10, 100),
+    'embedding_dim': tune.choice([8, 16, 32, 64, 128, 256, 512]),
     'n_prototypes': tune.randint(10, 100),
     'sim_proto_weight': tune.loguniform(1e-3, 10),
     'sim_batch_weight': tune.loguniform(1e-3, 10)
@@ -74,7 +74,7 @@ protomf_hyper_param = {
 
 uiprotomf_hyper_param = {
     **base_hyper_params,
-    'latent_dimension': tune.randint(10, 100),
+    'embedding_dim': tune.choice([8, 16, 32, 64, 128, 256, 512]),
     'u_n_prototypes': tune.randint(10, 100),
     'i_n_prototypes': tune.randint(10, 100),
     'u_sim_proto_weight': tune.loguniform(1e-3, 10),
