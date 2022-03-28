@@ -43,20 +43,20 @@ class SGDMatrixFactorization(SGDBasedRecommenderAlgorithm):
     Implements a simple Matrix Factorization model trained with gradient descent
     """
 
-    def __init__(self, n_users: int, n_items: int, latent_dimension: int = 100, use_user_bias: bool = False,
+    def __init__(self, n_users: int, n_items: int, embedding_dim: int = 100, use_user_bias: bool = False,
                  use_item_bias: bool = False, use_global_bias: bool = False):
         super().__init__()
 
         self.n_users = n_users
         self.n_items = n_items
-        self.latent_dimension = latent_dimension
+        self.embedding_dim = embedding_dim
 
         self.use_user_bias = use_user_bias
         self.use_item_bias = use_item_bias
         self.use_global_bias = use_global_bias
 
-        self.user_embeddings = nn.Embedding(self.n_users, self.latent_dimension)
-        self.item_embeddings = nn.Embedding(self.n_items, self.latent_dimension)
+        self.user_embeddings = nn.Embedding(self.n_users, self.embedding_dim)
+        self.item_embeddings = nn.Embedding(self.n_items, self.embedding_dim)
 
         if self.use_user_bias:
             self.user_bias = nn.Embedding(self.n_users, 1)
@@ -71,7 +71,7 @@ class SGDMatrixFactorization(SGDBasedRecommenderAlgorithm):
         self.name = 'SGDMatrixFactorization'
 
         print(f'Built {self.name} module\n'
-              f'- latent_dimension: {self.latent_dimension} \n'
+              f'- embedding_dim: {self.embedding_dim} \n'
               f'- use_user_bias: {self.use_user_bias} \n'
               f'- use_item_bias: {self.use_item_bias} \n'
               f'- use_global_bias: {self.use_global_bias}')
@@ -105,21 +105,21 @@ class ACF(SGDBasedRecommenderAlgorithm):
     NB. Loss aggregation has to be performed differently in order to have the regularization losses in the same size
     """
 
-    def __init__(self, n_users: int, n_items: int, latent_dimension: int = 100, n_anchors: int = 20,
+    def __init__(self, n_users: int, n_items: int, embedding_dim: int = 100, n_anchors: int = 20,
                  delta_exc: float = 1e-1, delta_inc: float = 1e-2):
         super().__init__()
 
         self.n_users = n_users
         self.n_items = n_items
-        self.latent_dimension = latent_dimension
+        self.embedding_dim = embedding_dim
         self.n_anchors = n_anchors
         self.delta_exc = delta_exc
         self.delta_inc = delta_inc
 
-        self.anchors = nn.Parameter(torch.randn(self.n_anchors, self.latent_dimension), requires_grad=True)
+        self.anchors = nn.Parameter(torch.randn(self.n_anchors, self.embedding_dim), requires_grad=True)
 
-        self.user_embed = nn.Embedding(self.n_users, self.latent_dimension)
-        self.item_embed = nn.Embedding(self.n_items, self.latent_dimension)
+        self.user_embed = nn.Embedding(self.n_users, self.embedding_dim)
+        self.item_embed = nn.Embedding(self.n_items, self.embedding_dim)
 
         self.user_embed.apply(general_weight_init)
         self.item_embed.apply(general_weight_init)
@@ -129,25 +129,18 @@ class ACF(SGDBasedRecommenderAlgorithm):
 
         self.name = 'ACF'
 
-        print(f'Built {self.name} module\n'
-              f'- latent_dimension: {self.latent_dimension} \n'
-              f'- n_anchors: {self.n_anchors} \n'
-              f'- delta_exc: {self.delta_exc} \n'
-              f'- delta_inc: {self.delta_inc}')
-
     def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
         # User pass
         u_embed = self.user_embed(u_idxs)
-
         c_u = u_embed @ self.anchors.T  # [batch_size, n_anchors]
         c_u = nn.Softmax(dim=-1)(c_u)
 
-        u_anc = c_u @ self.anchors  # [batch_size, latent_dimension]
+        u_anc = c_u @ self.anchors  # [batch_size, embedding_dim]
 
         # Item pass
         i_embed = self.item_embed(i_idxs)
-        c_i = i_embed @ self.anchors.T  # [batch_size, n_neg_p_1, latent_dimension]
-        c_i = nn.Softmax(dim=-1)(c_i)
+        c_i_unnorm = i_embed @ self.anchors.T  # [batch_size, n_neg_p_1, embedding_dim]
+        c_i = nn.Softmax(dim=-1)(c_i_unnorm)
 
         i_anc = c_i @ self.anchors
 
@@ -156,7 +149,8 @@ class ACF(SGDBasedRecommenderAlgorithm):
         # Regularization losses
 
         # Exclusiveness constraint
-        exc = - (c_i * torch.log(c_i)).sum()
+        exc_values = c_i * (c_i_unnorm - torch.logsumexp(c_i_unnorm, dim=-1, keepdim=True))
+        exc = - exc_values.sum()
 
         # Inclusiveness constraint
         q_k = c_i.sum(dim=[0, 1]) / c_i.sum()  # n_anchors
@@ -174,7 +168,7 @@ class ACF(SGDBasedRecommenderAlgorithm):
 
     @staticmethod
     def build_from_conf(conf: dict, dataset: data.Dataset):
-        return ACF(dataset.n_users, dataset.n_items, conf['latent_dimension'], conf['n_anchors'],
+        return ACF(dataset.n_users, dataset.n_items, conf['embedding_dim'], conf['n_anchors'],
                    conf['delta_exc'], conf['delta_inc'])
 
 
@@ -183,21 +177,21 @@ class UProtoMF(SGDBasedRecommenderAlgorithm):
     Implements the ProtoMF model with user prototypes
     """
 
-    def __init__(self, n_users: int, n_items: int, latent_dimension: int = 100, n_prototypes: int = 20,
+    def __init__(self, n_users: int, n_items: int, embedding_dim: int = 100, n_prototypes: int = 20,
                  sim_proto_weight: float = 1., sim_batch_weight: float = 1.):
         super().__init__()
 
         self.n_users = n_users
         self.n_items = n_items
-        self.latent_dimension = latent_dimension
+        self.embedding_dim = embedding_dim
         self.n_prototypes = n_prototypes
         self.sim_proto_weight = sim_proto_weight
         self.sim_batch_weight = sim_batch_weight
 
-        self.user_embed = nn.Embedding(self.n_users, self.latent_dimension)
+        self.user_embed = nn.Embedding(self.n_users, self.embedding_dim)
         self.item_embed = nn.Embedding(self.n_items, self.n_prototypes)
 
-        self.prototypes = nn.Parameter(torch.randn([self.n_prototypes, self.latent_dimension]))
+        self.prototypes = nn.Parameter(torch.randn([self.n_prototypes, self.embedding_dim]))
 
         self.cosine_sim_func = lambda x, y: (1 + nn.CosineSimilarity(dim=-1)(x, y)) / 2
 
@@ -212,7 +206,7 @@ class UProtoMF(SGDBasedRecommenderAlgorithm):
         print(f'Built {self.name} model \n'
               f'- n_users: {self.n_users} \n'
               f'- n_items: {self.n_items} \n'
-              f'- latent_dimension: {self.latent_dimension} \n'
+              f'- embedding_dim: {self.embedding_dim} \n'
               f'- n_prototypes: {self.n_prototypes} \n'
               f'- sim_proto_weight: {self.sim_proto_weight} \n'
               f'- sim_batch_weight: {self.sim_batch_weight} \n')
@@ -247,21 +241,21 @@ class IProtoMF(SGDBasedRecommenderAlgorithm):
     Implements the ProtoMF model with item prototypes
     """
 
-    def __init__(self, n_users: int, n_items: int, latent_dimension: int = 100, n_prototypes: int = 20,
+    def __init__(self, n_users: int, n_items: int, embedding_dim: int = 100, n_prototypes: int = 20,
                  sim_proto_weight: float = 1., sim_batch_weight: float = 1.):
         super().__init__()
 
         self.n_users = n_users
         self.n_items = n_items
-        self.latent_dimension = latent_dimension
+        self.embedding_dim = embedding_dim
         self.n_prototypes = n_prototypes
         self.sim_proto_weight = sim_proto_weight
         self.sim_batch_weight = sim_batch_weight
 
         self.user_embed = nn.Embedding(self.n_users, self.n_prototypes)
-        self.item_embed = nn.Embedding(self.n_items, self.latent_dimension)
+        self.item_embed = nn.Embedding(self.n_items, self.embedding_dim)
 
-        self.prototypes = nn.Parameter(torch.randn([self.n_prototypes, self.latent_dimension]))
+        self.prototypes = nn.Parameter(torch.randn([self.n_prototypes, self.embedding_dim]))
 
         self.cosine_sim_func = lambda x, y: (1 + nn.CosineSimilarity(dim=-1)(x, y)) / 2
 
@@ -276,7 +270,7 @@ class IProtoMF(SGDBasedRecommenderAlgorithm):
         print(f'Built {self.name} model \n'
               f'- n_users: {self.n_users} \n'
               f'- n_items: {self.n_items} \n'
-              f'- latent_dimension: {self.latent_dimension} \n'
+              f'- embedding_dim: {self.embedding_dim} \n'
               f'- n_prototypes: {self.n_prototypes} \n'
               f'- sim_proto_weight: {self.sim_proto_weight} \n'
               f'- sim_batch_weight: {self.sim_batch_weight} \n')
@@ -312,14 +306,14 @@ class UIProtoMF(SGDBasedRecommenderAlgorithm):
     Implements the ProtoMF model with item and user prototypes
     """
 
-    def __init__(self, n_users: int, n_items: int, latent_dimension: int = 100, u_n_prototypes: int = 20,
+    def __init__(self, n_users: int, n_items: int, embedding_dim: int = 100, u_n_prototypes: int = 20,
                  i_n_prototypes: int = 20, u_sim_proto_weight: float = 1., u_sim_batch_weight: float = 1.,
                  i_sim_proto_weight: float = 1., i_sim_batch_weight: float = 1.):
         super().__init__()
 
         self.n_users = n_users
         self.n_items = n_items
-        self.latent_dimension = latent_dimension
+        self.embedding_dim = embedding_dim
         self.u_n_prototypes = u_n_prototypes
         self.i_n_prototypes = i_n_prototypes
         self.u_sim_proto_weight = u_sim_proto_weight
@@ -327,14 +321,14 @@ class UIProtoMF(SGDBasedRecommenderAlgorithm):
         self.i_sim_proto_weight = i_sim_proto_weight
         self.i_sim_batch_weight = i_sim_batch_weight
 
-        self.user_embed = nn.Embedding(self.n_users, self.latent_dimension)
-        self.item_embed = nn.Embedding(self.n_items, self.latent_dimension)
+        self.user_embed = nn.Embedding(self.n_users, self.embedding_dim)
+        self.item_embed = nn.Embedding(self.n_items, self.embedding_dim)
 
-        self.u_prototypes = nn.Parameter(torch.randn([self.u_n_prototypes, self.latent_dimension]))
-        self.i_prototypes = nn.Parameter(torch.randn([self.i_n_prototypes, self.latent_dimension]))
+        self.u_prototypes = nn.Parameter(torch.randn([self.u_n_prototypes, self.embedding_dim]))
+        self.i_prototypes = nn.Parameter(torch.randn([self.i_n_prototypes, self.embedding_dim]))
 
-        self.u_to_i_proj = nn.Linear(self.latent_dimension, self.i_n_prototypes)
-        self.i_to_u_proj = nn.Linear(self.latent_dimension, self.u_n_prototypes)
+        self.u_to_i_proj = nn.Linear(self.embedding_dim, self.i_n_prototypes)
+        self.i_to_u_proj = nn.Linear(self.embedding_dim, self.u_n_prototypes)
 
         self.cosine_sim_func = lambda x, y: (1 + nn.CosineSimilarity(dim=-1)(x, y)) / 2
 
@@ -351,7 +345,7 @@ class UIProtoMF(SGDBasedRecommenderAlgorithm):
         print(f'Built {self.name} model \n'
               f'- n_users: {self.n_users} \n'
               f'- n_items: {self.n_items} \n'
-              f'- latent_dimension: {self.latent_dimension} \n'
+              f'- embedding_dim: {self.embedding_dim} \n'
               f'- u_n_prototypes: {self.u_n_prototypes} \n'
               f'- i_n_prototypes: {self.i_n_prototypes} \n'
               f'- u_sim_proto_weight: {self.u_sim_proto_weight} \n'
@@ -361,8 +355,8 @@ class UIProtoMF(SGDBasedRecommenderAlgorithm):
               )
 
     def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
-        u_embed = self.user_embed(u_idxs)  # [batch_size, latent_dimension]
-        i_embed = self.item_embed(i_idxs)  # [batch_size, n_neg + 1, latent_dimension]
+        u_embed = self.user_embed(u_idxs)  # [batch_size, embedding_dim]
+        i_embed = self.item_embed(i_idxs)  # [batch_size, n_neg + 1, embedding_dim]
 
         # User pass
         u_sim_mtx = self.cosine_sim_func(u_embed.unsqueeze(-2), self.u_prototypes)  # [batch_size, u_n_prototypes]
