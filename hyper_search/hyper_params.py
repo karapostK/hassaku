@@ -34,7 +34,7 @@ acf_hyper_params = {
     **base_hyper_params,
     'embedding_dim': tune.choice([8, 16, 32, 64, 128, 256, 512]),
     'n_anchors': tune.randint(10, 100),
-    'delta_exc': tune.loguniform(1e-3, 10),
+    'delta_exc': tune.loguniform(1e-3, 1),
     'delta_inc': tune.loguniform(1e-3, 10),
     'loss_aggregator': 'sum'
 }

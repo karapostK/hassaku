@@ -73,8 +73,8 @@ def tune_training(conf: dict, checkpoint_dir=None):
 
             checkpoint_file = os.path.join(checkpoint_dir, 'best_model.pth')
             conf['n_epochs'] = conf['experiment_settings']['n_epochs']
+            conf['best_model_path'] = checkpoint_file
             exp_conf = ExperimentConfig.build_from_conf(conf)
-            exp_conf.best_model_path = checkpoint_file
 
             # Validation happens within Trainer
             trainer = Trainer(alg, train_loader, val_loader, exp_conf)
