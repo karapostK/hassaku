@@ -129,10 +129,11 @@ def run_train_val(conf: dict, run_name: str, **kwargs):
     conf['experiment_settings'] = kwargs
 
     tune.register_trainable(run_name, tune_training)
+    experiment_name = generate_id(prefix=run_name)
     tune.run(
         run_name,
         config=conf,
-        name=generate_id(prefix=run_name),
+        name=experiment_name,
         resources_per_trial={'gpu': kwargs['n_gpus'], 'cpu': kwargs['n_cpus']},
         scheduler=scheduler,
         search_alg=search_alg,
@@ -150,6 +151,9 @@ def run_train_val(conf: dict, run_name: str, **kwargs):
     print('Train and Val ended')
     print(f'Best configuration is: \n {best_config}')
     print(f'Best checkpoint is: \n {best_checkpoint}')
+
+    # Logging info to file for easier post-processing
+    keep_callback.log_bests(os.path.join('~/ray_results', experiment_name))
 
     return best_config, best_checkpoint
 

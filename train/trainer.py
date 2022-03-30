@@ -55,6 +55,8 @@ class ExperimentConfig:
                                 wd=conf['optim_param']['wd'],
                                 optim_type=conf['optim_param']['optim'],
                                 device=conf['device'] if 'device' in conf else 'cuda',
+                                best_model_path=
+                                conf['best_model_path'] if 'best_model_path' in conf else './best_model.npz',
                                 seed=conf['seed'],
                                 loss_aggregator=conf['loss_aggregator'] if 'loss_aggregator' in conf else 'mean')
 

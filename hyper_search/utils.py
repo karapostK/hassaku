@@ -107,3 +107,13 @@ class KeepOnlyTopTrials(Callback):
         best_conf = self._top_confs[argmax]
 
         return best_value, best_path, best_conf
+
+    def log_bests(self, path_to_file: str):
+        """
+        Logs the values, paths, and confs of the best trials
+        """
+
+        np.savez(os.path.join(path_to_file, 'top_runs.npz'),
+                 top_maxs=self._top_maxs,
+                 top_paths=[os.path.join(x, 'checkpoint_000000') for x in self._top_paths],
+                 top_confs=self._top_confs)
