@@ -153,7 +153,7 @@ def run_train_val(conf: dict, run_name: str, **kwargs):
     print(f'Best checkpoint is: \n {best_checkpoint}')
 
     # Logging info to file for easier post-processing
-    keep_callback.log_bests(os.path.join('~/ray_results', experiment_name))
+    keep_callback.log_bests(os.path.expanduser(os.path.join('~/ray_results', experiment_name)))
 
     return best_config, best_checkpoint
 
