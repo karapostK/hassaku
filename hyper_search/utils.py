@@ -1,10 +1,12 @@
 import glob
 import os
 from collections import defaultdict
-from typing import Dict, List
+from typing import Dict, List, Optional
 
+import hyperopt as hpo
 import numpy as np
 from ray.tune import Stopper, Callback
+from ray.tune.suggest.hyperopt import HyperOptSearch
 
 
 class NoImprovementsStopper(Stopper):
@@ -117,3 +119,55 @@ class KeepOnlyTopTrials(Callback):
                  top_maxs=self._top_maxs,
                  top_paths=[os.path.join(x, 'checkpoint_000000') for x in self._top_paths],
                  top_confs=self._top_confs)
+
+
+class HyperOptSearchMaxMetric(HyperOptSearch):
+
+    def __init__(self, space: Optional[Dict] = None, metric: Optional[str] = None, mode: Optional[str] = None,
+                 points_to_evaluate: Optional[List[Dict]] = None, n_initial_points: int = 20,
+                 random_state_seed: Optional[int] = None, gamma: float = 0.25, max_concurrent: Optional[int] = None,
+                 use_early_stopped_trials: Optional[bool] = None):
+        super().__init__(space, metric, mode, points_to_evaluate, n_initial_points, random_state_seed, gamma,
+                         max_concurrent, use_early_stopped_trials)
+
+        self._trials_maxs = {}
+
+    def on_trial_result(self, trial_id: str, result: Dict) -> None:
+
+        super().on_trial_result(trial_id, result)
+
+        current_max = self._trials_maxs.get(trial_id, -np.inf)
+
+        if current_max < result[self.metric]:
+            # Update own max
+            current_max = result[self.metric]
+            self._trials_maxs[trial_id] = current_max
+
+    def on_trial_complete(self, trial_id: str, result: Optional[Dict] = None, error: bool = False) -> None:
+        super().on_trial_complete(trial_id, result, error)
+        del self._trials_maxs[trial_id]
+
+    def _process_result(self, trial_id: str, result: Dict) -> None:
+        ho_trial = self._get_hyperopt_trial(trial_id)
+        if not ho_trial:
+            return
+        ho_trial["refresh_time"] = hpo.utils.coarse_utcnow()
+
+        ho_trial["state"] = hpo.base.JOB_STATE_DONE
+        hp_result = self._to_hyperopt_result_max_metric(trial_id)
+        ho_trial["result"] = hp_result
+        self._hpopt_trials.refresh()
+
+    def _to_hyperopt_result_max_metric(self, trial_id: str) -> Dict:
+        try:
+            return {
+                "loss": - self._trials_maxs[trial_id],
+                "status": "ok"
+            }
+        except KeyError as e:
+            raise RuntimeError(
+                f"Hyperopt expected to see the metric `{self.metric}` in the "
+                f"dictionary, but it was not found. To fix this, make "
+                f"sure your call to `tune.report` or your return value of "
+                f"your trainable class `step()` contains the above metric "
+                f"as a key.") from e

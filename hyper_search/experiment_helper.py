@@ -18,7 +18,7 @@ from consts.consts import PROJECT_NAME, WANDB_API_KEY_PATH, SEED_LIST, DATA_PATH
 from consts.enums import RecAlgorithmsEnum, RecDatasetsEnum
 from data.dataset import TrainRecDataset, FullEvalDataset
 from hyper_search.hyper_params import alg_param
-from hyper_search.utils import KeepOnlyTopTrials, NoImprovementsStopper
+from hyper_search.utils import KeepOnlyTopTrials, NoImprovementsStopper, HyperOptSearchMaxMetric
 from train.trainer import ExperimentConfig, Trainer
 from utilities.eval import evaluate_recommender_algorithm
 from utilities.utils import generate_id, reproducible
@@ -103,7 +103,7 @@ def run_train_val(conf: dict, run_name: str, **kwargs):
     metric_name = OPTIMIZING_METRIC
 
     # Search Algorithm
-    search_alg = HyperOptSearch(random_state_seed=conf['seed'])
+    search_alg = HyperOptSearchMaxMetric(random_state_seed=conf['seed'])
 
     if os.path.basename(conf['data_path']) == 'lfm2b1m':
         scheduler = ASHAScheduler(grace_period=4)
