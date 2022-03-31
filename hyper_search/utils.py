@@ -7,6 +7,7 @@ import hyperopt as hpo
 import numpy as np
 from ray.tune import Stopper, Callback
 from ray.tune.suggest.hyperopt import HyperOptSearch
+from ray.tune.trial import Trial
 
 
 class NoImprovementsStopper(Stopper):

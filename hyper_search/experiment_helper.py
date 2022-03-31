@@ -8,7 +8,6 @@ from ray import tune
 from ray.tune.integration.wandb import WandbLoggerCallback
 from ray.tune.schedulers import ASHAScheduler
 from ray.tune.stopper import CombinedStopper, TrialPlateauStopper
-from ray.tune.suggest.hyperopt import HyperOptSearch
 from torch.utils.data import DataLoader
 
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm
@@ -124,12 +123,15 @@ def run_train_val(conf: dict, run_name: str, **kwargs):
     )
 
     # Other experiment's settings
+    experiment_name = generate_id(prefix=run_name)
+
     conf['device'] = 'cuda' if kwargs['n_gpus'] > 0 and torch.cuda.is_available() else 'cpu'
     conf['eval_batch_size'] = EVAL_BATCH_SIZE
     conf['experiment_settings'] = kwargs
+    conf['run_name'] = run_name
+    conf['experiment_name'] = experiment_name
 
     tune.register_trainable(run_name, tune_training)
-    experiment_name = generate_id(prefix=run_name)
     tune.run(
         run_name,
         config=conf,
@@ -143,7 +145,7 @@ def run_train_val(conf: dict, run_name: str, **kwargs):
         stop=stopper,
         max_concurrent_trials=kwargs['n_concurrent'],
         mode='max',
-        fail_fast=True,
+        fail_fast='raise',
     )
 
     best_value, best_checkpoint, best_config = keep_callback.get_best_trial()
