@@ -1,12 +1,12 @@
 from hyperopt import hp
 from ray import tune
 
+from consts.consts import EVAL_BATCH_SIZE
 from consts.enums import RecAlgorithmsEnum
-from train.rec_losses import RecommenderSystemLossesEnum
 
 base_hyper_params = {
+    'eval_batch_size': EVAL_BATCH_SIZE,
     'train_neg_strategy': tune.choice(['popular', 'uniform']),
-    'rec_loss': tune.choice([loss.name for loss in RecommenderSystemLossesEnum]),
     'batch_size': tune.choice([128, 256, 512]),
     'neg_train': tune.randint(1, 20),
     'optim_param': {
@@ -16,12 +16,22 @@ base_hyper_params = {
     },
 }
 
-sgdmf_hyper_params = {
+logmf_hyper_params = {
     **base_hyper_params,
+    'rec_loss': 'bce',
     'embedding_dim': tune.choice([8, 16, 32, 64, 128, 256, 512]),
     'use_user_bias': tune.choice([True, False]),
     'use_item_bias': tune.choice([True, False]),
     'use_global_bias': tune.choice([True, False])
+}
+
+bprmf_hyper_params = {
+    **base_hyper_params,
+    'rec_loss': 'bpr',
+    'embedding_dim': tune.choice([8, 16, 32, 64, 128, 256, 512]),
+    'use_user_bias': False,
+    'use_item_bias': False,
+    'use_global_bias': False
 }
 
 # rbmf_hyper_param = {
@@ -32,6 +42,7 @@ sgdmf_hyper_params = {
 
 acf_hyper_params = {
     **base_hyper_params,
+    'rec_loss': 'sampled_softmax',
     'embedding_dim': tune.choice([8, 16, 32, 64, 128, 256, 512]),
     'n_anchors': tune.randint(10, 100),
     'delta_exc': tune.loguniform(1e-3, 1),
@@ -66,6 +77,7 @@ knn_hyper_param = {
 
 protomf_hyper_param = {
     **base_hyper_params,
+    'rec_loss': 'sampled_softmax',
     'embedding_dim': tune.choice([8, 16, 32, 64, 128, 256, 512]),
     'n_prototypes': tune.randint(10, 100),
     'sim_proto_weight': tune.loguniform(1e-3, 10),
@@ -74,6 +86,7 @@ protomf_hyper_param = {
 
 uiprotomf_hyper_param = {
     **base_hyper_params,
+    'rec_loss': 'sampled_softmax',
     'embedding_dim': tune.choice([8, 16, 32, 64, 128, 256, 512]),
     'u_n_prototypes': tune.randint(10, 100),
     'i_n_prototypes': tune.randint(10, 100),
@@ -84,14 +97,15 @@ uiprotomf_hyper_param = {
 
 }
 alg_param = {
-    RecAlgorithmsEnum.sgdbias: base_hyper_params,
-    RecAlgorithmsEnum.uknn: knn_hyper_param,
-    RecAlgorithmsEnum.iknn: knn_hyper_param,
-    RecAlgorithmsEnum.sgdmf: sgdmf_hyper_params,
-    RecAlgorithmsEnum.uprotomf: protomf_hyper_param,
-    RecAlgorithmsEnum.iprotomf: protomf_hyper_param,
-    RecAlgorithmsEnum.uiprotomf: uiprotomf_hyper_param,
-    RecAlgorithmsEnum.pop: {},
-    RecAlgorithmsEnum.rand: {},
-    RecAlgorithmsEnum.acf: acf_hyper_params
+    RecAlgorithmsEnum.sgdbias.name: base_hyper_params,
+    RecAlgorithmsEnum.uknn.name: knn_hyper_param,
+    RecAlgorithmsEnum.iknn.name: knn_hyper_param,
+    RecAlgorithmsEnum.bprmf.name: bprmf_hyper_params,
+    RecAlgorithmsEnum.logmf.name: logmf_hyper_params,
+    RecAlgorithmsEnum.uprotomf.name: protomf_hyper_param,
+    RecAlgorithmsEnum.iprotomf.name: protomf_hyper_param,
+    RecAlgorithmsEnum.uiprotomf.name: uiprotomf_hyper_param,
+    RecAlgorithmsEnum.pop.name: {'eval_batch_size': EVAL_BATCH_SIZE, },
+    RecAlgorithmsEnum.rand.name: {'eval_batch_size': EVAL_BATCH_SIZE, },
+    RecAlgorithmsEnum.acf.name: acf_hyper_params
 }

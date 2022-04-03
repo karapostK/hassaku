@@ -126,7 +126,6 @@ def run_train_val(conf: dict, run_name: str, **kwargs):
     experiment_name = generate_id(prefix=run_name)
 
     conf['device'] = 'cuda' if kwargs['n_gpus'] > 0 and torch.cuda.is_available() else 'cpu'
-    conf['eval_batch_size'] = EVAL_BATCH_SIZE
     conf['experiment_settings'] = kwargs
     conf['run_name'] = run_name
     conf['experiment_name'] = experiment_name
@@ -196,7 +195,7 @@ def start_hyper(alg: RecAlgorithmsEnum, dataset: RecDatasetsEnum, seed: int = SI
     print(f'Dataset is {dataset.name} - Seed is {seed}')
 
     # ---- Algorithm's parameters and hyperparameters ---- #
-    conf = alg_param[alg]
+    conf = alg_param[alg.name]
     conf['alg'] = alg
 
     # Dataset

@@ -12,7 +12,8 @@ from algorithms.sgd_alg import SGDMatrixFactorization, UProtoMF, UIProtoMF, IPro
 class RecAlgorithmsEnum(Enum):
     uknn = UserKNN
     iknn = ItemKNN
-    sgdmf = SGDMatrixFactorization
+    bprmf = SGDMatrixFactorization  # BPR applied to Matrix Factorization
+    logmf = SGDMatrixFactorization  # Logistic Matrix Factorization
     sgdbias = SGDBaseline
     pop = PopularItems
     rand = RandomItems
