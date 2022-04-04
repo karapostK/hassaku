@@ -1,7 +1,7 @@
 import argparse
 import os
 
-from consts.consts import SINGLE_SEED, NUM_SAMPLES
+from consts.consts import SINGLE_SEED, NUM_SAMPLES, NUM_EPOCHS
 from consts.enums import RecAlgorithmsEnum, RecDatasetsEnum
 from hyper_search.experiment_helper import start_multi_dataset, start_multiple_hyper, start_hyper
 
@@ -25,13 +25,13 @@ parser.add_argument('--every', '-e', action='store_true', default=False, require
 
 parser.add_argument('--n_samples', '-ns', type=int, default=NUM_SAMPLES, required=False,
                     help='Number of hyperparameters configurations to sample')
-parser.add_argument('--n_gpus', '-ng', type=float, default=0.2, required=False,
+parser.add_argument('--n_gpus', '-ng', type=float, default=0.14, required=False,
                     help='Number of gpus per trial (<= 1 values are possible)')
 parser.add_argument('--n_cpus', '-ncp', type=float, default=1., required=False,
                     help='Number of cpus per trial (<= 1 values are possible)')
 parser.add_argument('--n_concurrent', '-nc', type=int, default=None, required=False,
                     help='Number of allowed concurrent trials.')
-parser.add_argument('--n_epochs', '-ne', type=int, default=100, required=False, help='Number of maximum epochs')
+parser.add_argument('--n_epochs', '-ne', type=int, default=NUM_EPOCHS, required=False, help='Number of maximum epochs')
 parser.add_argument('--n_workers', '-nw', type=int, default=2, required=False,
                     help='Number of workers for the training dataloader')
 

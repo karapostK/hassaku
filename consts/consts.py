@@ -5,7 +5,8 @@ LOG_FILT_DATA_PATH = "log_filtering_data.txt"
 # --- Experiment Constants --- #
 SINGLE_SEED = 38210573
 SEED_LIST = [SINGLE_SEED, 9491758, 2931009]
-NUM_SAMPLES = 100
+NUM_SAMPLES = 50
+NUM_EPOCHS = 50
 
 # --- Evaluation Constants --- #
 K_VALUES = [1, 3, 5, 10, 20, 50, 100]  # K value for the evaluation metrics
