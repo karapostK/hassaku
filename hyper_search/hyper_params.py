@@ -1,11 +1,9 @@
 from hyperopt import hp
 from ray import tune
 
-from consts.consts import EVAL_BATCH_SIZE
 from consts.enums import RecAlgorithmsEnum
 
 base_hyper_params = {
-    'eval_batch_size': EVAL_BATCH_SIZE,
     'train_neg_strategy': tune.choice(['popular', 'uniform']),
     'batch_size': tune.choice([128, 256, 512]),
     'neg_train': tune.randint(1, 20),
@@ -25,14 +23,14 @@ logmf_hyper_params = {
     'use_global_bias': tune.choice([True, False])
 }
 
-bprmf_hyper_params = {
-    **base_hyper_params,
-    'rec_loss': 'bpr',
-    'embedding_dim': tune.choice([8, 16, 32, 64, 128, 256, 512]),
-    'use_user_bias': False,
-    'use_item_bias': False,
-    'use_global_bias': False
-}
+# bprmf_hyper_params = {
+#     **base_hyper_params,
+#     'rec_loss': 'bpr',
+#     'embedding_dim': tune.choice([8, 16, 32, 64, 128, 256, 512]),
+#     'use_user_bias': False,
+#     'use_item_bias': False,
+#     'use_global_bias': False
+# }
 
 # rbmf_hyper_param = {
 #    **base_param,
@@ -100,12 +98,12 @@ alg_param = {
     RecAlgorithmsEnum.sgdbias.name: base_hyper_params,
     RecAlgorithmsEnum.uknn.name: knn_hyper_param,
     RecAlgorithmsEnum.iknn.name: knn_hyper_param,
-    RecAlgorithmsEnum.bprmf.name: bprmf_hyper_params,
+    #RecAlgorithmsEnum.bprmf.name: bprmf_hyper_params,
     RecAlgorithmsEnum.logmf.name: logmf_hyper_params,
     RecAlgorithmsEnum.uprotomf.name: protomf_hyper_param,
     RecAlgorithmsEnum.iprotomf.name: protomf_hyper_param,
     RecAlgorithmsEnum.uiprotomf.name: uiprotomf_hyper_param,
-    RecAlgorithmsEnum.pop.name: {'eval_batch_size': EVAL_BATCH_SIZE, },
-    RecAlgorithmsEnum.rand.name: {'eval_batch_size': EVAL_BATCH_SIZE, },
+    RecAlgorithmsEnum.pop.name: {},
+    RecAlgorithmsEnum.rand.name: {},
     RecAlgorithmsEnum.acf.name: acf_hyper_params
 }

@@ -1,7 +1,7 @@
 import argparse
 import os
 
-from consts.consts import SINGLE_SEED, NUM_SAMPLES, NUM_EPOCHS
+from consts.consts import SINGLE_SEED, NUM_SAMPLES, NUM_EPOCHS, EVAL_BATCH_SIZE
 from consts.enums import RecAlgorithmsEnum, RecDatasetsEnum
 from hyper_search.experiment_helper import start_multi_dataset, start_multiple_hyper, start_hyper
 
@@ -34,6 +34,8 @@ parser.add_argument('--n_concurrent', '-nc', type=int, default=None, required=Fa
 parser.add_argument('--n_epochs', '-ne', type=int, default=NUM_EPOCHS, required=False, help='Number of maximum epochs')
 parser.add_argument('--n_workers', '-nw', type=int, default=2, required=False,
                     help='Number of workers for the training dataloader')
+parser.add_argument('--eval_batch_size', '-ebs', type=int, default=EVAL_BATCH_SIZE, required=False,
+                    help='Number of users in the evaluation batch')
 
 args = parser.parse_args()
 
@@ -48,13 +50,14 @@ n_cpus = args.n_cpus
 n_concurrent = args.n_concurrent
 n_epochs = args.n_epochs
 n_workers = args.n_workers
+eval_batch_size = args.eval_batch_size
 
 if every:
     start_multi_dataset(alg, n_gpus=n_gpus, n_cpus=n_cpus, n_concurrent=n_concurrent, n_samples=n_samples,
-                        n_epochs=n_epochs, n_workers=n_workers)
+                        n_epochs=n_epochs, n_workers=n_workers, eval_batch_size=eval_batch_size)
 elif multiple:
     start_multiple_hyper(alg, dataset, n_gpus=n_gpus, n_cpus=n_cpus, n_concurrent=n_concurrent, n_samples=n_samples,
-                         n_epochs=n_epochs, n_workers=n_workers)
+                         n_epochs=n_epochs, n_workers=n_workers, eval_batch_size=eval_batch_size)
 else:
     start_hyper(alg, dataset, seed, n_gpus=n_gpus, n_cpus=n_cpus, n_concurrent=n_concurrent, n_samples=n_samples,
-                n_epochs=n_epochs, n_workers=n_workers)
+                n_epochs=n_epochs, n_workers=n_workers, eval_batch_size=eval_batch_size)

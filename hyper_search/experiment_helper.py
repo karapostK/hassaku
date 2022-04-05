@@ -42,7 +42,7 @@ def load_data(conf: dict, split_set: str, **kwargs):
                 data_path=conf['data_path'],
                 split_set='val',
             ),
-            batch_size=conf['eval_batch_size']
+            batch_size=kwargs['eval_batch_size'] if 'eval_batch_size' in kwargs else EVAL_BATCH_SIZE
         )
 
     elif split_set == 'test':
@@ -51,7 +51,7 @@ def load_data(conf: dict, split_set: str, **kwargs):
                 data_path=conf['data_path'],
                 split_set='test',
             ),
-            batch_size=conf['eval_batch_size']
+            batch_size=kwargs['eval_batch_size'] if 'eval_batch_size' in kwargs else EVAL_BATCH_SIZE
         )
 
 
@@ -60,7 +60,7 @@ def tune_training(conf: dict, checkpoint_dir=None):
     Function executed by ray tune. It corresponds to a single trial.
     """
 
-    train_loader = load_data(conf, 'train', n_workers=conf['experiment_settings']['n_workers'])
+    train_loader = load_data(conf, 'train', **conf['experiment_settings'])
     val_loader = load_data(conf, 'val')
 
     reproducible(conf['seed'])
@@ -93,7 +93,7 @@ def tune_training(conf: dict, checkpoint_dir=None):
             alg.save_model_to_path(checkpoint_file)
 
 
-def run_train_val(conf: dict, run_name: str, **kwargs):
+def run_train_val(conf: dict, run_name: str):
     """
     Runs the train and validation procedure.
     """
@@ -124,9 +124,8 @@ def run_train_val(conf: dict, run_name: str, **kwargs):
 
     # Other experiment's settings
     experiment_name = generate_id(prefix=run_name)
-
-    conf['device'] = 'cuda' if kwargs['n_gpus'] > 0 and torch.cuda.is_available() else 'cpu'
-    conf['experiment_settings'] = kwargs
+    experiment_settings = conf['experiment_settings']
+    conf['device'] = 'cuda' if experiment_settings['n_gpus'] > 0 and torch.cuda.is_available() else 'cpu'
     conf['run_name'] = run_name
     conf['experiment_name'] = experiment_name
 
@@ -135,14 +134,14 @@ def run_train_val(conf: dict, run_name: str, **kwargs):
         run_name,
         config=conf,
         name=experiment_name,
-        resources_per_trial={'gpu': kwargs['n_gpus'], 'cpu': kwargs['n_cpus']},
+        resources_per_trial={'gpu': experiment_settings['n_gpus'], 'cpu': experiment_settings['n_cpus']},
         scheduler=scheduler,
         search_alg=search_alg,
-        num_samples=kwargs['n_samples'],
+        num_samples=experiment_settings['n_samples'],
         callbacks=[log_callback, keep_callback],
         metric=metric_name,
         stop=stopper,
-        max_concurrent_trials=kwargs['n_concurrent'],
+        max_concurrent_trials=experiment_settings['n_concurrent'],
         mode='max',
         fail_fast='raise',
     )
@@ -204,6 +203,9 @@ def start_hyper(alg: RecAlgorithmsEnum, dataset: RecDatasetsEnum, seed: int = SI
     # Seed
     conf['seed'] = seed
 
+    # Experiment Settings
+    conf['experiment_settings'] = kwargs
+
     run_name = f'{alg.name}_{dataset.name}_{seed}'
 
     # ---- Train/Validation ---- #
@@ -213,7 +215,7 @@ def start_hyper(alg: RecAlgorithmsEnum, dataset: RecDatasetsEnum, seed: int = SI
         best_config, best_checkpoint = conf, ''
     else:
         print('Start Train/Val')
-        best_config, best_checkpoint = run_train_val(conf, run_name, **kwargs)
+        best_config, best_checkpoint = run_train_val(conf, run_name)
 
     print('Start Test')
     metric_values = run_test(run_name, best_config, best_checkpoint)
