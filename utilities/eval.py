@@ -8,18 +8,22 @@ from consts.consts import K_VALUES, SINGLE_SEED
 from utilities.utils import reproducible, print_results
 
 
-def Recall_at_k_batch(logits: torch.Tensor, y_true: torch.Tensor, k: int = 10, aggr_sum: bool = True):
+def Recall_at_k_batch(logits: torch.Tensor, y_true: torch.Tensor, k: int = 10, aggr_sum: bool = True,
+                      idx_topk: torch.Tensor = None):
     """
     Recall.
     :param logits: Logits. Shape is (batch_size, *).
     :param y_true: the true prediction. Shape is (batch_size, *)
     :param k: cut-off value
     :param aggr_sum: whether we sum the values over the batch_size. Default to true.
+    :param idx_topk: pre-computed top-k indexes (used to index both logits and y_true)
 
     :return: Recall@k. Shape is (batch_size,) if aggr_sum=False, otherwise returns a scalar.
     """
-
-    idx_topk = logits.topk(k=k).indices
+    if idx_topk is not None:
+        assert idx_topk is not None and idx_topk.shape[-1] == k, \
+            'Top-k indexes have different "k" compared to the parameter function'
+    idx_topk = logits.topk(k=k).indices if idx_topk is None else idx_topk
     indexing_column = torch.arange(logits.shape[0]).unsqueeze(-1)
     num = y_true[indexing_column, idx_topk].sum(dim=-1)
     den = y_true.sum(dim=-1)
@@ -34,18 +38,23 @@ def Recall_at_k_batch(logits: torch.Tensor, y_true: torch.Tensor, k: int = 10, a
         return list(recall)
 
 
-def Precision_at_k_batch(logits: torch.Tensor, y_true: torch.Tensor, k: int = 10, aggr_sum: bool = True):
+def Precision_at_k_batch(logits: torch.Tensor, y_true: torch.Tensor, k: int = 10, aggr_sum: bool = True,
+                         idx_topk: torch.Tensor = None):
     """
     Precision.
     :param logits: Logits. Shape is (batch_size, *).
     :param y_true: the true prediction. Shape is (batch_size, *)
     :param k: cut-off value
     :param aggr_sum: whether we sum the values over the batch_size. Default to true.
+    :param idx_topk: pre-computed top-k indexes (used to index both logits and y_true)
 
     :return: Precision@k. Shape is (batch_size,) if aggr_sum=False, otherwise returns a scalar.
     """
 
-    idx_topk = logits.topk(k=k).indices
+    if idx_topk is not None:
+        assert idx_topk is not None and idx_topk.shape[-1] == k, \
+            'Top-k indexes have different "k" compared to the parameter function'
+    idx_topk = logits.topk(k=k).indices if idx_topk is None else idx_topk
     indexing_column = torch.arange(logits.shape[0]).unsqueeze(-1)
     num = y_true[indexing_column, idx_topk].sum(dim=-1)
 
@@ -58,18 +67,23 @@ def Precision_at_k_batch(logits: torch.Tensor, y_true: torch.Tensor, k: int = 10
         return list(precision)
 
 
-def NDCG_at_k_batch(logits: torch.Tensor, y_true: torch.Tensor, k: int = 10, aggr_sum: bool = True):
+def NDCG_at_k_batch(logits: torch.Tensor, y_true: torch.Tensor, k: int = 10, aggr_sum: bool = True,
+                    idx_topk: torch.Tensor = None):
     """
     Normalized Discount Cumulative Gain. This implementation considers binary relevance.
     :param logits: Logits. Shape is (batch_size, *).
     :param y_true: the true prediction. Shape is (batch_size, *)
     :param k: cut-off value
     :param aggr_sum: whether we sum the values over the batch_size. Default to true.
+    :param idx_topk: pre-computed top-k indexes (used to index both logits and y_true)
 
     :return: NDCG@k. Shape is (batch_size,) if aggr_sum=False, otherwise returns a scalar.
     """
 
-    idx_topk = logits.topk(k=k).indices
+    if idx_topk is not None:
+        assert idx_topk is not None and idx_topk.shape[-1] == k, \
+            'Top-k indexes have different "k" compared to the parameter function'
+    idx_topk = logits.topk(k=k).indices if idx_topk is None else idx_topk
     indexing_column = torch.arange(logits.shape[0]).unsqueeze(-1)
 
     discount_template = 1. / torch.log2(torch.arange(2, k + 2).float())
@@ -116,10 +130,13 @@ class FullEvaluator:
         :param logits: Logits. Shape is (batch_size, *).
         :param y_true: the true prediction. Shape is (batch_size, *)
         """
+
         for k in K_VALUES:
+            idx_topk = logits.topk(k=k).indices
             for metric_name, metric in zip(['precision@{}', 'recall@{}', 'ndcg@{}'],
                                            [Precision_at_k_batch, Recall_at_k_batch, NDCG_at_k_batch]):
-                self.metrics_values[metric_name.format(k)] += metric(logits, y_true, k, self.aggr_users).detach()
+                self.metrics_values[metric_name.format(k)] += metric(logits, y_true, k, self.aggr_users,
+                                                                     idx_topk).detach()
 
     def get_results(self):
 
