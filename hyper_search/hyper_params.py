@@ -49,7 +49,7 @@ acf_hyper_params = {
 }
 
 knn_hyper_param = {
-    'k': tune.randint(5, 1000),
+    'k': tune.randint(5, 100),
     'sim_func_params': hp.choice('sim_func_name', [
         {
             'sim_func_name': 'jaccard'
