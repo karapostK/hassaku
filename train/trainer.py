@@ -163,7 +163,5 @@ class Trainer:
         self.model.eval()
         print('Validation started')
 
-        metrics_values = evaluate_recommender_algorithm(self.pointer_to_model, self.val_loader, self.seed + 1,
-                                                        self.device,
-                                                        self.rec_loss)
+        metrics_values = evaluate_recommender_algorithm(self.pointer_to_model, self.val_loader, self.device)
         return metrics_values

@@ -1,5 +1,5 @@
-import typing
 from abc import ABC, abstractmethod
+from typing import Union, Tuple
 
 import torch
 from torch import nn
@@ -19,7 +19,7 @@ class RecommenderAlgorithm(ABC):
         print(f'Built {self.name} module')
 
     @abstractmethod
-    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union:
+    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
         """
         Predict the affinity score for the users in u_idxs over the items i_idxs.
         NB. The methods have to take into account of the negative sampling! (see the shape of the inputs)
@@ -60,11 +60,45 @@ class SGDBasedRecommenderAlgorithm(RecommenderAlgorithm, ABC, nn.Module):
 
         print(f'Built {self.name} module')
 
-    @abstractmethod
     def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
         """
-        Similar to predict but used mostly for training
+        Similar to predict but used for training. It provides a simple default implementation that can be adjusted in
+        case.
         """
+        u_repr = self.get_user_representations(u_idxs)
+        i_repr = self.get_item_representations(i_idxs)
+
+        out = self.combine_user_item_representations(u_repr, i_repr)
+        return out
+
+    @abstractmethod
+    def get_user_representations(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor]]:
+        """
+        Returns a user representation given the user indexes. It is especially useful for faster validation.
+        :param u_idxs: user indexes. Shape is (batch_size)
+        :return: user representation/s. The output depends on the model.
+        """
+        pass
+
+    @abstractmethod
+    def get_item_representations(self, i_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        """
+        Returns an item representation given the user indexes. It is especially useful for faster validation.
+        :param i_idxs: item indexes. Shape is (batch_size, n_neg + 1), where n_neg is the number of negative samples
+        :return: item representation/s. The output depends on the model.
+        """
+        pass
+
+    @abstractmethod
+    def combine_user_item_representations(self, u_repr: Union[torch.Tensor, Tuple[torch.Tensor, ...]],
+                                          i_repr: Union[torch.Tensor, Tuple[torch.Tensor, ...]]) -> torch.Tensor:
+        """
+        Combine the user and item representations to generate the final logits.
+        :param u_repr: User representations (see get_user_representations)
+        :param i_repr: Item representations (see get_item_representations)
+        :return:
+        """
+        pass
 
     def get_and_reset_other_loss(self) -> float:
         """
@@ -76,7 +110,7 @@ class SGDBasedRecommenderAlgorithm(RecommenderAlgorithm, ABC, nn.Module):
         return 0
 
     @torch.no_grad()
-    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union:
+    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
         self.eval()
         out = self(u_idxs, i_idxs)
         return out

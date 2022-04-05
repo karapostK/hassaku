@@ -1,3 +1,5 @@
+from typing import Union, Tuple
+
 import torch
 from torch import nn
 from torch.utils import data
@@ -28,9 +30,15 @@ class SGDBaseline(SGDBasedRecommenderAlgorithm):
 
         print(f'Built {self.name} module\n')
 
-    def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
-        out = self.user_bias(u_idxs) + self.item_bias(i_idxs).squeeze() + self.global_bias
+    def get_user_representations(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        return self.user_bias(u_idxs)
 
+    def get_item_representations(self, i_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        return self.item_bias(i_idxs).squeeze()
+
+    def combine_user_item_representations(self, u_repr: Union[torch.Tensor, Tuple[torch.Tensor, ...]],
+                                          i_repr: Union[torch.Tensor, Tuple[torch.Tensor, ...]]) -> torch.Tensor:
+        out = u_repr + i_repr + self.global_bias
         return out
 
     @staticmethod
@@ -76,21 +84,37 @@ class SGDMatrixFactorization(SGDBasedRecommenderAlgorithm):
               f'- use_item_bias: {self.use_item_bias} \n'
               f'- use_global_bias: {self.use_global_bias}')
 
-    def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
-        u_embed = self.user_embeddings(u_idxs)
-        i_embed = self.item_embeddings(i_idxs)
+    def get_user_representations(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        if self.use_user_bias:
+            return self.user_embeddings(u_idxs), self.user_bias(u_idxs)
+        else:
+            return self.user_embeddings(u_idxs)
 
-        out = (u_embed[:, None, :] * i_embed).sum(axis=-1)
+    def get_item_representations(self, i_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        if self.use_item_bias:
+            return self.item_embeddings(i_idxs), self.item_bias(i_idxs).squeeze()
+        return self.item_embeddings(i_idxs)
+
+    def combine_user_item_representations(self, u_repr: Union[torch.Tensor, Tuple[torch.Tensor, ...]],
+                                          i_repr: Union[torch.Tensor, Tuple[torch.Tensor, ...]]) -> torch.Tensor:
+        if isinstance(u_repr, tuple):
+            u_embed, u_bias = u_repr
+        else:
+            u_embed = u_repr
+
+        if isinstance(i_repr, tuple):
+            i_embed, i_bias = i_repr
+        else:
+            i_embed = i_repr
+
+        out = (u_embed[:, None, :] * i_embed).sum(dim=-1)
 
         if self.use_user_bias:
-            u_bias = self.user_bias(u_idxs)
             out += u_bias
         if self.use_item_bias:
-            i_bias = self.item_bias(i_idxs).squeeze()
             out += i_bias
         if self.use_global_bias:
             out += self.global_bias
-
         return out
 
     @staticmethod
@@ -130,24 +154,13 @@ class ACF(SGDBasedRecommenderAlgorithm):
         self.name = 'ACF'
 
     def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
-        # User pass
-        u_embed = self.user_embed(u_idxs)
-        c_u = u_embed @ self.anchors.T  # [batch_size, n_anchors]
-        c_u = nn.Softmax(dim=-1)(c_u)
+        u_repr = self.get_user_representations(u_idxs)
+        i_repr = self.get_item_representations(i_idxs)
 
-        u_anc = c_u @ self.anchors  # [batch_size, embedding_dim]
-
-        # Item pass
-        i_embed = self.item_embed(i_idxs)
-        c_i_unnorm = i_embed @ self.anchors.T  # [batch_size, n_neg_p_1, embedding_dim]
-        c_i = nn.Softmax(dim=-1)(c_i_unnorm)
-
-        i_anc = c_i @ self.anchors
-
-        dots = (u_anc.unsqueeze(-2) * i_anc).sum(dim=-1)
+        dots = self.combine_user_item_representations(u_repr, i_repr)
 
         # Regularization losses
-
+        _, c_i, c_i_unnorm = i_repr
         # Exclusiveness constraint
         exc_values = c_i * (c_i_unnorm - torch.logsumexp(c_i_unnorm, dim=-1, keepdim=True))
         exc = - exc_values.sum()
@@ -159,6 +172,30 @@ class ACF(SGDBasedRecommenderAlgorithm):
         self._acc_exc += exc
         self._acc_inc += inc
 
+        return dots
+
+    def get_user_representations(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        u_embed = self.user_embed(u_idxs)
+        c_u = u_embed @ self.anchors.T  # [batch_size, n_anchors]
+        c_u = nn.Softmax(dim=-1)(c_u)
+
+        u_anc = c_u @ self.anchors  # [batch_size, embedding_dim]
+
+        return u_anc
+
+    def get_item_representations(self, i_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        i_embed = self.item_embed(i_idxs)
+        c_i_unnorm = i_embed @ self.anchors.T  # [batch_size, n_neg_p_1, embedding_dim]
+        c_i = nn.Softmax(dim=-1)(c_i_unnorm)
+
+        i_anc = c_i @ self.anchors
+        return i_anc, c_i, c_i_unnorm
+
+    def combine_user_item_representations(self, u_repr: Union[torch.Tensor, Tuple[torch.Tensor, ...]],
+                                          i_repr: Union[torch.Tensor, Tuple[torch.Tensor, ...]]) -> torch.Tensor:
+        u_anc = u_repr
+        i_anc = i_repr[0]
+        dots = (u_anc.unsqueeze(-2) * i_anc).sum(dim=-1)
         return dots
 
     def get_and_reset_other_loss(self) -> float:
@@ -191,7 +228,7 @@ class UProtoMF(SGDBasedRecommenderAlgorithm):
         self.user_embed = nn.Embedding(self.n_users, self.embedding_dim)
         self.item_embed = nn.Embedding(self.n_items, self.n_prototypes)
 
-        self.prototypes = nn.Parameter(torch.randn([self.n_prototypes, self.embedding_dim]))
+        self.prototypes = nn.Parameter(torch.randn([self.n_prototypes, self.embedding_dim]), requires_grad=True)
 
         self.cosine_sim_func = lambda x, y: (1 + nn.CosineSimilarity(dim=-1)(x, y)) / 2
 
@@ -212,17 +249,29 @@ class UProtoMF(SGDBasedRecommenderAlgorithm):
               f'- sim_batch_weight: {self.sim_batch_weight} \n')
 
     def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
-        u_embed = self.user_embed(u_idxs)
-        i_embed = self.item_embed(i_idxs)
+        u_repr = self.get_user_representations(u_idxs)
+        i_repr = self.get_item_representations(i_idxs)
 
-        sim_mtx = self.cosine_sim_func(u_embed.unsqueeze(-2), self.prototypes)  # [batch_size,n_prototypes]
-
-        dots = (sim_mtx.unsqueeze(-2) * i_embed).sum(axis=-1)
+        dots = self.combine_user_item_representations(u_repr, i_repr)
 
         # Compute regularization losses
+        sim_mtx = u_repr
         self._acc_r_proto += - sim_mtx.max(dim=0).values.mean()
         self._acc_r_batch += - sim_mtx.max(dim=1).values.mean()
 
+        return dots
+
+    def get_user_representations(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        u_embed = self.user_embed(u_idxs)
+        sim_mtx = self.cosine_sim_func(u_embed.unsqueeze(-2), self.prototypes)  # [batch_size,n_prototypes]
+        return sim_mtx
+
+    def get_item_representations(self, i_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        return self.item_embed(i_idxs)
+
+    def combine_user_item_representations(self, u_repr: Union[torch.Tensor, Tuple[torch.Tensor, ...]],
+                                          i_repr: Union[torch.Tensor, Tuple[torch.Tensor, ...]]) -> torch.Tensor:
+        dots = (u_repr.unsqueeze(-2) * i_repr).sum(dim=-1)
         return dots
 
     def get_and_reset_other_loss(self) -> float:
@@ -255,7 +304,7 @@ class IProtoMF(SGDBasedRecommenderAlgorithm):
         self.user_embed = nn.Embedding(self.n_users, self.n_prototypes)
         self.item_embed = nn.Embedding(self.n_items, self.embedding_dim)
 
-        self.prototypes = nn.Parameter(torch.randn([self.n_prototypes, self.embedding_dim]))
+        self.prototypes = nn.Parameter(torch.randn([self.n_prototypes, self.embedding_dim]), requires_grad=True)
 
         self.cosine_sim_func = lambda x, y: (1 + nn.CosineSimilarity(dim=-1)(x, y)) / 2
 
@@ -276,18 +325,30 @@ class IProtoMF(SGDBasedRecommenderAlgorithm):
               f'- sim_batch_weight: {self.sim_batch_weight} \n')
 
     def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
-        u_embed = self.user_embed(u_idxs)
-        i_embed = self.item_embed(i_idxs)
+        u_repr = self.get_user_representations(u_idxs)
+        i_repr = self.get_item_representations(i_idxs)
 
-        sim_mtx = self.cosine_sim_func(i_embed.unsqueeze(-2), self.prototypes)  # [batch_size,n_neg + 1,n_prototypes]
-
-        dots = (u_embed.unsqueeze(-2) * sim_mtx).sum(axis=-1)
-
+        dots = self.combine_user_item_representations(u_repr, i_repr)
         # Compute regularization losses
+        sim_mtx = i_repr
         sim_mtx = sim_mtx.reshape(-1, self.n_prototypes)
         self._acc_r_proto += - sim_mtx.max(dim=0).values.mean()
         self._acc_r_batch += - sim_mtx.max(dim=1).values.mean()
 
+        return dots
+
+    def get_user_representations(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        return self.user_embed(u_idxs)
+
+    def get_item_representations(self, i_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        i_embed = self.item_embed(i_idxs)
+        sim_mtx = self.cosine_sim_func(i_embed.unsqueeze(-2), self.prototypes)  # [batch_size,n_neg + 1,n_prototypes]
+
+        return sim_mtx
+
+    def combine_user_item_representations(self, u_repr: Union[torch.Tensor, Tuple[torch.Tensor, ...]],
+                                          i_repr: Union[torch.Tensor, Tuple[torch.Tensor, ...]]) -> torch.Tensor:
+        dots = (u_repr.unsqueeze(-2) * i_repr).sum(dim=-1)
         return dots
 
     def get_and_reset_other_loss(self) -> float:
@@ -324,8 +385,8 @@ class UIProtoMF(SGDBasedRecommenderAlgorithm):
         self.user_embed = nn.Embedding(self.n_users, self.embedding_dim)
         self.item_embed = nn.Embedding(self.n_items, self.embedding_dim)
 
-        self.u_prototypes = nn.Parameter(torch.randn([self.u_n_prototypes, self.embedding_dim]))
-        self.i_prototypes = nn.Parameter(torch.randn([self.i_n_prototypes, self.embedding_dim]))
+        self.u_prototypes = nn.Parameter(torch.randn([self.u_n_prototypes, self.embedding_dim]), requires_grad=True)
+        self.i_prototypes = nn.Parameter(torch.randn([self.i_n_prototypes, self.embedding_dim]), requires_grad=True)
 
         self.u_to_i_proj = nn.Linear(self.embedding_dim, self.i_n_prototypes)
         self.i_to_u_proj = nn.Linear(self.embedding_dim, self.u_n_prototypes)
@@ -354,32 +415,46 @@ class UIProtoMF(SGDBasedRecommenderAlgorithm):
               f'- i_sim_batch_weight: {self.i_sim_batch_weight} \n'
               )
 
-    def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
-        u_embed = self.user_embed(u_idxs)  # [batch_size, embedding_dim]
-        i_embed = self.item_embed(i_idxs)  # [batch_size, n_neg + 1, embedding_dim]
-
-        # User pass
+    def get_user_representations(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        u_embed = self.user_embed(u_idxs)
         u_sim_mtx = self.cosine_sim_func(u_embed.unsqueeze(-2), self.u_prototypes)  # [batch_size, u_n_prototypes]
-        i_proj = self.i_to_u_proj(i_embed)  # [batch_size, n_neg + 1, u_n_prototypes]
-
-        u_dots = (u_sim_mtx.unsqueeze(-2) * i_proj).sum(axis=-1)
-
-        self._u_acc_r_proto += - u_sim_mtx.max(dim=0).values.mean()
-        self._u_acc_r_batch += - u_sim_mtx.max(dim=1).values.mean()
-
-        # Item pass
-        i_sim_mtx = self.cosine_sim_func(i_embed.unsqueeze(-2),
-                                         self.i_prototypes)  # [batch_size, n_neg + 1, i_n_prototypes]
         u_proj = self.u_to_i_proj(u_embed)  # [batch_size, i_n_prototypes]
 
-        i_dots = (u_proj.unsqueeze(-2) * i_sim_mtx).sum(axis=-1)
+        return u_sim_mtx, u_proj
 
+    def get_item_representations(self, i_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        i_embed = self.item_embed(i_idxs)
+        i_sim_mtx = self.cosine_sim_func(i_embed.unsqueeze(-2),
+                                         self.i_prototypes)  # [batch_size, n_neg + 1, i_n_prototypes]
+        i_proj = self.i_to_u_proj(i_embed)  # [batch_size, n_neg + 1, u_n_prototypes]
+
+        return i_sim_mtx, i_proj
+
+    def combine_user_item_representations(self, u_repr: Union[torch.Tensor, Tuple[torch.Tensor, ...]],
+                                          i_repr: Union[torch.Tensor, Tuple[torch.Tensor, ...]]) -> torch.Tensor:
+        u_sim_mtx, u_proj = u_repr
+        i_sim_mtx, i_proj = i_repr
+
+        u_dots = (u_sim_mtx.unsqueeze(-2) * i_proj).sum(dim=-1)
+        i_dots = (u_proj.unsqueeze(-2) * i_sim_mtx).sum(dim=-1)
+        dots = u_dots + i_dots
+        return dots
+
+    def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
+        u_repr = self.get_user_representations(u_idxs)
+        i_repr = self.get_item_representations(i_idxs)
+
+        dots = self.combine_user_item_representations(u_repr, i_repr)
+
+        # Regularization losses
+        u_sim_mtx, _ = u_repr
+        i_sim_mtx, _ = i_repr
         i_sim_mtx = i_sim_mtx.reshape(-1, self.i_n_prototypes)
+        self._u_acc_r_proto += - u_sim_mtx.max(dim=0).values.mean()
+        self._u_acc_r_batch += - u_sim_mtx.max(dim=1).values.mean()
         self._i_acc_r_proto += - i_sim_mtx.max(dim=0).values.mean()
         self._i_acc_r_batch += - i_sim_mtx.max(dim=1).values.mean()
 
-        # Merge
-        dots = u_dots + i_dots
         return dots
 
     def get_and_reset_other_loss(self) -> float:

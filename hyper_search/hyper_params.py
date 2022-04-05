@@ -98,7 +98,7 @@ alg_param = {
     RecAlgorithmsEnum.sgdbias.name: base_hyper_params,
     RecAlgorithmsEnum.uknn.name: knn_hyper_param,
     RecAlgorithmsEnum.iknn.name: knn_hyper_param,
-    #RecAlgorithmsEnum.bprmf.name: bprmf_hyper_params,
+    # RecAlgorithmsEnum.bprmf.name: bprmf_hyper_params,
     RecAlgorithmsEnum.logmf.name: logmf_hyper_params,
     RecAlgorithmsEnum.uprotomf.name: protomf_hyper_param,
     RecAlgorithmsEnum.iprotomf.name: protomf_hyper_param,

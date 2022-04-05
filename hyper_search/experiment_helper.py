@@ -86,7 +86,7 @@ def tune_training(conf: dict, checkpoint_dir=None):
             alg.fit(train_loader.dataset.iteration_matrix)
 
             # -- Validation --
-            metrics_values = evaluate_recommender_algorithm(alg, val_loader, conf['seed'])
+            metrics_values = evaluate_recommender_algorithm(alg, val_loader)
             tune.report(**metrics_values)
 
             # -- Save --
@@ -180,7 +180,7 @@ def run_test(run_name: str, best_config: dict, best_checkpoint=''):
             best_checkpoint = os.path.join(best_checkpoint, 'best_model.npz')
         alg.load_model_from_path(best_checkpoint)
 
-    metrics_values = evaluate_recommender_algorithm(alg, test_loader, best_config['seed'])
+    metrics_values = evaluate_recommender_algorithm(alg, test_loader)
 
     wandb.log(metrics_values)
 

@@ -1,3 +1,4 @@
+import math
 import os
 
 import numpy as np
@@ -201,4 +202,29 @@ class FullEvalDataset(data.Dataset):
         return self.n_users
 
     def __getitem__(self, user_index):
-        return user_index, np.arange(self.n_items), self.evaluation_matrix[user_index].toarray().squeeze().astype('float32')
+        return user_index, np.arange(self.n_items), self.evaluation_matrix[user_index].toarray().squeeze().astype(
+            'float32')
+
+
+class BigDataset(data.Dataset):
+    """
+    Dataset used mostly for testing purposes
+    """
+
+    def __init__(self):
+        self.n_items = 80000
+        self.n_users = 4000
+
+        self.evaluation_matrix = sp.lil_matrix((self.n_users, self.n_items))
+
+        for user in range(self.n_users):
+            items = np.random.randint(0, self.n_items, 20)
+            self.evaluation_matrix[user, items] = 1
+        self.evaluation_matrix = sp.csr_matrix(self.evaluation_matrix)
+
+    def __len__(self):
+        return self.n_users
+
+    def __getitem__(self, user_index):
+        return user_index, np.arange(self.n_items), self.evaluation_matrix[user_index].toarray().squeeze().astype(
+            'float32')

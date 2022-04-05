@@ -1,5 +1,5 @@
-import typing
 import warnings
+from typing import Union
 
 import numpy as np
 import torch
@@ -14,7 +14,7 @@ class RandomItems(RecommenderAlgorithm):
         self.name = 'RandomItems'
         print(f'Built {self.name} module')
 
-    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union[np.ndarray, torch.Tensor]:
+    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> Union[np.ndarray, torch.Tensor]:
         # Generate random scores
 
         out = torch.rand(i_idxs.shape)
@@ -43,7 +43,7 @@ class PopularItems(RecommenderAlgorithm):
         self.name = 'PopularItems'
         print(f'Built {self.name} module')
 
-    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union[np.ndarray, torch.Tensor]:
+    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> Union[np.ndarray, torch.Tensor]:
         warnings.warn(f'Ensure that you are evaluating {self.name} over all items!')
         out = self.pop_distribution[i_idxs]
         return out

@@ -4,8 +4,8 @@ import torch
 from torch.utils.data import DataLoader
 
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm, RecommenderAlgorithm
-from consts.consts import K_VALUES, SINGLE_SEED
-from utilities.utils import reproducible, print_results
+from consts.consts import K_VALUES
+from utilities.utils import print_results
 
 
 def Recall_at_k_batch(logits: torch.Tensor, y_true: torch.Tensor, k: int = 10, aggr_sum: bool = True,
@@ -153,32 +153,36 @@ class FullEvaluator:
         return metrics_dict
 
 
-def evaluate_recommender_algorithm(alg: RecommenderAlgorithm, eval_loader: DataLoader, seed: int = SINGLE_SEED,
-                                   device='cpu', rec_loss=None):
-    reproducible(seed)
-
+def evaluate_recommender_algorithm(alg: RecommenderAlgorithm, eval_loader: DataLoader, device='cpu'):
     evaluator = FullEvaluator(eval_loader.dataset.n_users)
-    eval_loss = 0
-    for u_idxs, i_idxs, labels in eval_loader:
-        u_idxs = u_idxs.to(device)
-        i_idxs = i_idxs.to(device)
-        labels = labels.to(device)
 
-        out = alg.predict(u_idxs, i_idxs)
+    if not isinstance(alg, SGDBasedRecommenderAlgorithm):
+        for u_idxs, i_idxs, labels in eval_loader:
+            u_idxs = u_idxs.to(device)
+            i_idxs = i_idxs.to(device)
+            labels = labels.to(device)
 
-        if not isinstance(out, torch.Tensor):
-            out = torch.tensor(out).to(device)
+            out = alg.predict(u_idxs, i_idxs)
 
-        if isinstance(alg, SGDBasedRecommenderAlgorithm) and rec_loss is not None:
-            eval_loss += rec_loss.compute_loss(out, labels).item()
-            eval_loss += alg.get_and_reset_other_loss()
+            if not isinstance(out, torch.Tensor):
+                out = torch.tensor(out).to(device)
 
-        evaluator.eval_batch(out, labels)
+            evaluator.eval_batch(out, labels)
+    else:
+        # We generate the item representation once (usually the bottleneck of evaluation)
+        i_idxs = torch.arange(eval_loader.dataset.n_items).to(device)
+        i_repr = alg.get_item_representations(i_idxs)
 
-    eval_loss /= len(eval_loader)
+        for u_idxs, _, labels in eval_loader:
+            u_idxs = u_idxs.to(device)
+            labels = labels.to(device)
+
+            u_repr = alg.get_user_representations(u_idxs)
+            out = alg.combine_user_item_representations(u_repr, i_repr)
+
+            evaluator.eval_batch(out, labels)
+
     metrics_values = evaluator.get_results()
-    if rec_loss is not None:
-        metrics_values = {**metrics_values, 'eval_loss': eval_loss}
 
     print_results(metrics_values)
     return metrics_values
