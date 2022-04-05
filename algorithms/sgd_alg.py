@@ -256,8 +256,8 @@ class UProtoMF(SGDBasedRecommenderAlgorithm):
 
         # Compute regularization losses
         sim_mtx = u_repr
-        self._acc_r_proto += - sim_mtx.max(dim=0).values.mean()
-        self._acc_r_batch += - sim_mtx.max(dim=1).values.mean()
+        self._acc_r_proto += (1 - sim_mtx).min(dim=0).values.mean()
+        self._acc_r_batch += (1 - sim_mtx).min(dim=1).values.mean()
 
         return dots
 
@@ -332,8 +332,8 @@ class IProtoMF(SGDBasedRecommenderAlgorithm):
         # Compute regularization losses
         sim_mtx = i_repr
         sim_mtx = sim_mtx.reshape(-1, self.n_prototypes)
-        self._acc_r_proto += - sim_mtx.max(dim=0).values.mean()
-        self._acc_r_batch += - sim_mtx.max(dim=1).values.mean()
+        self._acc_r_proto += (1 - sim_mtx).min(dim=0).values.mean()
+        self._acc_r_batch += (1 - sim_mtx).min(dim=1).values.mean()
 
         return dots
 
@@ -450,10 +450,10 @@ class UIProtoMF(SGDBasedRecommenderAlgorithm):
         u_sim_mtx, _ = u_repr
         i_sim_mtx, _ = i_repr
         i_sim_mtx = i_sim_mtx.reshape(-1, self.i_n_prototypes)
-        self._u_acc_r_proto += - u_sim_mtx.max(dim=0).values.mean()
-        self._u_acc_r_batch += - u_sim_mtx.max(dim=1).values.mean()
-        self._i_acc_r_proto += - i_sim_mtx.max(dim=0).values.mean()
-        self._i_acc_r_batch += - i_sim_mtx.max(dim=1).values.mean()
+        self._u_acc_r_proto += (1 - u_sim_mtx).min(dim=0).values.mean()
+        self._u_acc_r_batch += (1 - u_sim_mtx).min(dim=1).values.mean()
+        self._i_acc_r_proto += (1 - i_sim_mtx).min(dim=0).values.mean()
+        self._i_acc_r_batch += (1 - i_sim_mtx).min(dim=1).values.mean()
 
         return dots
 
