@@ -26,5 +26,5 @@ class RecAlgorithmsEnum(Enum):
 
 class RecDatasetsEnum(Enum):
     ml1m = enum.auto()
-    # amazon2014 = enum.auto()
+    amazonvid = enum.auto()
     lfm2b2020 = enum.auto()
