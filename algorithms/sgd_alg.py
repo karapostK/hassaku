@@ -153,6 +153,14 @@ class ACF(SGDBasedRecommenderAlgorithm):
 
         self.name = 'ACF'
 
+        print(f'Built {self.name} model \n'
+              f'- n_users: {self.n_users} \n'
+              f'- n_items: {self.n_items} \n'
+              f'- embedding_dim: {self.embedding_dim} \n'
+              f'- n_anchors: {self.n_anchors} \n'
+              f'- delta_exc: {self.delta_exc} \n'
+              f'- delta_inc: {self.delta_inc} \n')
+
     def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
         u_repr = self.get_user_representations(u_idxs)
         i_repr = self.get_item_representations(i_idxs)
