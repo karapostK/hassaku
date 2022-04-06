@@ -104,10 +104,10 @@ def run_train_val(conf: dict, run_name: str):
     # Search Algorithm
     search_alg = HyperOptSearchMaxMetric(random_state_seed=conf['seed'])
 
-    if os.path.basename(conf['data_path']) == 'lfm2b1m':
-        scheduler = ASHAScheduler(grace_period=4)
-    else:
-        scheduler = None
+    # if os.path.basename(conf['data_path']) == 'lfm2b1m':
+    #     scheduler = ASHAScheduler(grace_period=4)
+    # else:
+    scheduler = None
 
     # Logger
     log_callback = WandbLoggerCallback(project=PROJECT_NAME, log_config=True, api_key_file=WANDB_API_KEY_PATH,
