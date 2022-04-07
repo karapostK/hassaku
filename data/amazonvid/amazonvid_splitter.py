@@ -43,6 +43,12 @@ lhs = lhs[lhs.rating >= 3.5]
 print_and_log(log_filt_data_file, len(lhs), lhs.user.nunique(), lhs.item.nunique(),
               'Only Positive Interactions (>= 3.5)')
 
+# Keeping only the first interaction
+lhs = lhs.sort_values('timestamp')
+lhs = lhs.drop_duplicates(subset=['item', 'user'])
+
+print_and_log(log_filt_data_file, len(lhs), lhs.user.nunique(), lhs.item.nunique(), 'Only first interaction')
+
 # 5-core filtering
 while True:
     start_number = len(lhs)
