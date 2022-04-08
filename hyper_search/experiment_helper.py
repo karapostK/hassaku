@@ -6,7 +6,6 @@ import torch
 import wandb
 from ray import tune
 from ray.tune.integration.wandb import WandbLoggerCallback
-from ray.tune.schedulers import ASHAScheduler
 from ray.tune.stopper import CombinedStopper, TrialPlateauStopper
 from torch.utils.data import DataLoader
 
@@ -104,11 +103,6 @@ def run_train_val(conf: dict, run_name: str):
     # Search Algorithm
     search_alg = HyperOptSearchMaxMetric(random_state_seed=conf['seed'])
 
-    # if os.path.basename(conf['data_path']) == 'lfm2b1m':
-    #     scheduler = ASHAScheduler(grace_period=4)
-    # else:
-    scheduler = None
-
     # Logger
     log_callback = WandbLoggerCallback(project=PROJECT_NAME, log_config=True, api_key_file=WANDB_API_KEY_PATH,
                                        reinit=True, force=True, job_type='train/val', tags=run_name.split('_'),
@@ -135,7 +129,6 @@ def run_train_val(conf: dict, run_name: str):
         config=conf,
         name=experiment_name,
         resources_per_trial={'gpu': experiment_settings['n_gpus'], 'cpu': experiment_settings['n_cpus']},
-        scheduler=scheduler,
         search_alg=search_alg,
         num_samples=experiment_settings['n_samples'],
         callbacks=[log_callback, keep_callback],
