@@ -1,5 +1,5 @@
-import typing
 import warnings
+from typing import Union
 
 import numpy as np
 import torch
@@ -14,10 +14,9 @@ class RandomItems(RecommenderAlgorithm):
         self.name = 'RandomItems'
         print(f'Built {self.name} module')
 
-    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union[np.ndarray, torch.Tensor]:
+    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> Union[np.ndarray, torch.Tensor]:
         # Generate random scores
-        warnings.warn(
-            f'You are evaluating {self.name} on specific datapoints. This is allowed however keep in mind that {self.name} should be evaluated across all items!')
+
         out = torch.rand(i_idxs.shape)
         return out
 
@@ -40,13 +39,12 @@ class PopularItems(RecommenderAlgorithm):
         :param pop_distribution: array with shape (n_items,). For each item we have its popularity value.
         """
         super().__init__()
-        self.pop_distribution = pop_distribution
+        self.pop_distribution = torch.tensor(pop_distribution)
         self.name = 'PopularItems'
         print(f'Built {self.name} module')
 
-    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union[np.ndarray, torch.Tensor]:
-        warnings.warn(
-            f'You are evaluating {self.name} on specific datapoints. This is allowed however keep in mind that {self.name} should be evaluated across all items!')
+    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> Union[np.ndarray, torch.Tensor]:
+        warnings.warn(f'Ensure that you are evaluating {self.name} over all items!')
         out = self.pop_distribution[i_idxs]
         return out
 

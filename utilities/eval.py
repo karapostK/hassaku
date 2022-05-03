@@ -1,168 +1,188 @@
-import bottleneck as bn
-import numpy as np
+from collections import defaultdict
+
 import torch
 from torch.utils.data import DataLoader
 
-from algorithms.base_classes import RecommenderAlgorithm
-from utilities.consts import K_VALUES, SINGLE_SEED
-from utilities.enums import RecAlgorithmsEnum
-from utilities.utils import reproducible, print_results
+from algorithms.base_classes import SGDBasedRecommenderAlgorithm, RecommenderAlgorithm
+from consts.consts import K_VALUES
+from utilities.utils import print_results
 
 
-def Hit_Ratio_at_k_batch(logits: np.ndarray, k=10, sum=True):
+def Recall_at_k_batch(logits: torch.Tensor, y_true: torch.Tensor, k: int = 10, aggr_sum: bool = True,
+                      idx_topk: torch.Tensor = None):
     """
-    Hit Ratio. It expects the positive logit in the first position of the vector.
-    :param logits: Logits. Shape is (batch_size, n_neg + 1).
-    :param k: threshold
-    :param sum: if we have to sum the values over the batch_size. Default to true.
-    :return: HR@K. Shape is (batch_size,) if sum=False, otherwise returns a scalar.
+    Recall.
+    :param logits: Logits. Shape is (batch_size, *).
+    :param y_true: the true prediction. Shape is (batch_size, *)
+    :param k: cut-off value
+    :param aggr_sum: whether we sum the values over the batch_size. Default to true.
+    :param idx_topk: pre-computed top-k indexes (used to index both logits and y_true)
+
+    :return: Recall@k. Shape is (batch_size,) if aggr_sum=False, otherwise returns a scalar.
     """
+    if idx_topk is not None:
+        assert idx_topk is not None and idx_topk.shape[-1] == k, \
+            'Top-k indexes have different "k" compared to the parameter function'
+    idx_topk = logits.topk(k=k).indices if idx_topk is None else idx_topk
+    indexing_column = torch.arange(logits.shape[0]).unsqueeze(-1)
+    num = y_true[indexing_column, idx_topk].sum(dim=-1)
+    den = y_true.sum(dim=-1)
 
-    assert logits.shape[1] >= k, 'k value is too high!'
+    recall = num / den
+    recall[torch.isnan(recall)] = .0
 
-    idx_topk_part = bn.argpartition(-logits, k, axis=1)[:, :k]
-    hrs = np.any(idx_topk_part[:] == 0, axis=1).astype(int)
-
-    if sum:
-        return np.sum(hrs)
+    assert (recall >= 0).all() and (recall <= 1).all()
+    if aggr_sum:
+        return recall.sum()
     else:
-        return hrs
+        return list(recall)
 
 
-def NDCG_at_k_batch(logits: np.ndarray, k=10, sum=True):
+def Precision_at_k_batch(logits: torch.Tensor, y_true: torch.Tensor, k: int = 10, aggr_sum: bool = True,
+                         idx_topk: torch.Tensor = None):
     """
-    Normalized Discount Cumulative Gain. It expects the positive logit in the first position of the vector.
-    :param logits: Logits. Shape is (batch_size, n_neg + 1).
-    :param k: threshold
-    :param sum: if we have to sum the values over the batch_size. Default to true.
-    :return: NDCG@K. Shape is (batch_size,) if sum=False, otherwise returns a scalar.
+    Precision.
+    :param logits: Logits. Shape is (batch_size, *).
+    :param y_true: the true prediction. Shape is (batch_size, *)
+    :param k: cut-off value
+    :param aggr_sum: whether we sum the values over the batch_size. Default to true.
+    :param idx_topk: pre-computed top-k indexes (used to index both logits and y_true)
+
+    :return: Precision@k. Shape is (batch_size,) if aggr_sum=False, otherwise returns a scalar.
     """
-    assert logits.shape[1] >= k, 'k value is too high!'
-    n = logits.shape[0]
-    dummy_column = np.arange(n).reshape(n, 1)
 
-    idx_topk_part = bn.argpartition(-logits, k, axis=1)[:, :k]
-    topk_part = logits[dummy_column, idx_topk_part]
-    idx_part = np.argsort(-topk_part, axis=1)
-    idx_topk = idx_topk_part[dummy_column, idx_part]
+    if idx_topk is not None:
+        assert idx_topk is not None and idx_topk.shape[-1] == k, \
+            'Top-k indexes have different "k" compared to the parameter function'
+    idx_topk = logits.topk(k=k).indices if idx_topk is None else idx_topk
+    indexing_column = torch.arange(logits.shape[0]).unsqueeze(-1)
+    num = y_true[indexing_column, idx_topk].sum(dim=-1)
 
-    rows, cols = np.where(idx_topk == 0)
-    ndcgs = np.zeros(n)
+    precision = num / k
 
-    if rows.size > 0:
-        ndcgs[rows] = 1. / np.log2((cols + 1) + 1)
-
-    if sum:
-        return np.sum(ndcgs)
+    assert (precision >= 0).all() and (precision <= 1).all()
+    if aggr_sum:
+        return precision.sum()
     else:
-        return ndcgs
+        return list(precision)
 
 
-class Evaluator:
+def NDCG_at_k_batch(logits: torch.Tensor, y_true: torch.Tensor, k: int = 10, aggr_sum: bool = True,
+                    idx_topk: torch.Tensor = None):
+    """
+    Normalized Discount Cumulative Gain. This implementation considers binary relevance.
+    :param logits: Logits. Shape is (batch_size, *).
+    :param y_true: the true prediction. Shape is (batch_size, *)
+    :param k: cut-off value
+    :param aggr_sum: whether we sum the values over the batch_size. Default to true.
+    :param idx_topk: pre-computed top-k indexes (used to index both logits and y_true)
+
+    :return: NDCG@k. Shape is (batch_size,) if aggr_sum=False, otherwise returns a scalar.
+    """
+
+    if idx_topk is not None:
+        assert idx_topk is not None and idx_topk.shape[-1] == k, \
+            'Top-k indexes have different "k" compared to the parameter function'
+    idx_topk = logits.topk(k=k).indices if idx_topk is None else idx_topk
+    indexing_column = torch.arange(logits.shape[0]).unsqueeze(-1)
+
+    discount_template = 1. / torch.log2(torch.arange(2, k + 2).float())
+    discount_template = discount_template.to(logits.device)
+
+    DCG = (y_true[indexing_column, idx_topk] * discount_template).sum(-1)
+    IDCG = (y_true.topk(k).values * discount_template).sum(-1)
+
+    NDCG = DCG / IDCG
+    NDCG[torch.isnan(NDCG)] = .0
+
+    # there might be issues with the precision here, just enforcing a maximum to solve the problem
+    NDCG = NDCG.clamp(max=1.)
+
+    if aggr_sum:
+        return NDCG.sum()
+    else:
+        return list(NDCG)
+
+
+class FullEvaluator:
     """
     Helper class for the evaluation. When called with eval_batch, it updates the internal results. After the last batch,
     get_results will return the aggregated information for all users.
     """
 
-    def __init__(self, n_users: int, logger=None):
+    def __init__(self, n_users: int, aggr_users: bool = True):
+        """
+
+        :param aggr_users: Whether to aggregate the results for all users (with mean)
+        """
         self.n_users = n_users
-        self.logger = logger
+        self.aggr_users = aggr_users
 
-        self.metrics_values = {}
+        self.metrics_values = None
 
-    def eval_batch(self, out: np.ndarray, sum: bool = True):
+        self._reset_internal_dict()
+
+    def _reset_internal_dict(self):
+        self.metrics_values = defaultdict(lambda: 0) if self.aggr_users else defaultdict(list)
+
+    def eval_batch(self, logits: torch.Tensor, y_true: torch.Tensor):
         """
-        :param out: Values after last layer. Shape is (batch_size, n_neg + 1).
+        :param logits: Logits. Shape is (batch_size, *).
+        :param y_true: the true prediction. Shape is (batch_size, *)
         """
+
         for k in K_VALUES:
-            for metric_name, metric in zip(['ndcg@{}', 'hit_ratio@{}'], [NDCG_at_k_batch, Hit_Ratio_at_k_batch]):
-                if sum:
-                    self.metrics_values[metric_name.format(k)] = self.metrics_values.get(metric_name.format(k), 0) + \
-                                                                 metric(out, k)
-                else:
-                    self.metrics_values[metric_name.format(k)] = self.metrics_values.get(metric_name.format(k),
-                                                                                         []) + list(
-                        metric(out, k, False))
+            idx_topk = logits.topk(k=k).indices
+            for metric_name, metric in zip(['precision@{}', 'recall@{}', 'ndcg@{}'],
+                                           [Precision_at_k_batch, Recall_at_k_batch, NDCG_at_k_batch]):
+                self.metrics_values[metric_name.format(k)] += metric(logits, y_true, k, self.aggr_users,
+                                                                     idx_topk).detach()
 
-    def get_results(self, aggregated=True):
-        """
-        Returns the aggregated results (avg) and logs the results.
-        """
-        if aggregated:
-            for metric_name in self.metrics_values:
+    def get_results(self):
+
+        for metric_name in self.metrics_values:
+            if self.aggr_users:
+                self.metrics_values[metric_name] = self.metrics_values[metric_name].item()
                 self.metrics_values[metric_name] /= self.n_users
-
-            # Logging if logger is specified
-            if self.logger:
-                for metric_name in self.metrics_values:
-                    self.logger.log_scalar(metric_name, self.metrics_values[metric_name])
+            else:
+                self.metrics_values[metric_name] = self.metrics_values[metric_name].numpy()
 
         metrics_dict = self.metrics_values
-        self.metrics_values = {}
+        self._reset_internal_dict()
 
         return metrics_dict
 
 
-def evaluate_recommender_algorithm(alg: RecommenderAlgorithm, eval_loader: DataLoader, seed: int = SINGLE_SEED,
-                                   device='cpu', rec_loss=None):
-    reproducible(seed)
+def evaluate_recommender_algorithm(alg: RecommenderAlgorithm, eval_loader: DataLoader, device='cpu'):
+    evaluator = FullEvaluator(eval_loader.dataset.n_users)
 
-    evaluator = Evaluator(eval_loader.dataset.n_users)
-    eval_loss = 0
-    for u_idxs, i_idxs, labels in eval_loader:
-        u_idxs = u_idxs.to(device)
-        i_idxs = i_idxs.to(device)
-        labels = labels.to(device)
+    if not isinstance(alg, SGDBasedRecommenderAlgorithm):
+        for u_idxs, i_idxs, labels in eval_loader:
+            u_idxs = u_idxs.to(device)
+            i_idxs = i_idxs.to(device)
+            labels = labels.to(device)
 
-        out = alg.predict(u_idxs, i_idxs)
+            out = alg.predict(u_idxs, i_idxs)
 
-        if rec_loss is not None:
-            eval_loss += rec_loss.compute_loss(out, labels).item()
-            eval_loss += alg.get_and_reset_other_loss()
+            if not isinstance(out, torch.Tensor):
+                out = torch.tensor(out).to(device)
 
-        if isinstance(out, torch.Tensor):
-            out = out.to('cpu')
+            evaluator.eval_batch(out, labels)
+    else:
+        # We generate the item representation once (usually the bottleneck of evaluation)
+        i_idxs = torch.arange(eval_loader.dataset.n_items).to(device)
+        i_repr = alg.get_item_representations(i_idxs)
 
-        evaluator.eval_batch(out)
+        for u_idxs, _, labels in eval_loader:
+            u_idxs = u_idxs.to(device)
+            labels = labels.to(device)
 
-    eval_loss /= len(eval_loader)
+            u_repr = alg.get_user_representations(u_idxs)
+            out = alg.combine_user_item_representations(u_repr, i_repr)
+
+            evaluator.eval_batch(out, labels)
+
     metrics_values = evaluator.get_results()
-    if rec_loss is not None:
-        metrics_values = {**metrics_values, 'eval_loss': eval_loss}
-
-    print_results(metrics_values)
-    return metrics_values
-
-
-def evaluate_naive_algorithm(alg: RecommenderAlgorithm, eval_loader: DataLoader, seed: int = SINGLE_SEED):
-    """
-    Manual evaluation for Pop and Rand
-    """
-    reproducible(seed)
-
-    metrics_values = {}
-
-    for u_idxs, i_idxs, labels in eval_loader:
-
-        for b in range(u_idxs.shape[0]):  # Going over the batch size
-
-            if isinstance(alg, RecAlgorithmsEnum.rand.value):
-                chosen_items = np.random.choice(np.arange(eval_loader.dataset.n_items), i_idxs.shape[1], replace=False)
-            elif isinstance(alg, RecAlgorithmsEnum.pop.value):
-                chosen_items = np.argsort(-eval_loader.dataset.pop_distribution)[:i_idxs.shape[1]]
-            else:
-                raise ValueError('Algorithm provided is non-compatible with this evaluation procedure!')
-
-            for k in K_VALUES:
-                position = np.where(chosen_items[:k] == i_idxs[b, 0].item())[0]
-                u_hr = int(len(position) > 0)
-
-                u_ndcg = 1 / (1 + np.log2(1 + position[0])) if len(position) > 0 else 0
-                metrics_values[f'hit_ratio@{k}'] = metrics_values.get(f'hit_ratio@{k}', 0) + u_hr
-                metrics_values[f'ndcg@{k}'] = metrics_values.get(f'ndcg@{k}', 0) + u_ndcg
-
-    for metric_name in metrics_values:
-        metrics_values[metric_name] /= eval_loader.dataset.n_users
 
     print_results(metrics_values)
     return metrics_values
