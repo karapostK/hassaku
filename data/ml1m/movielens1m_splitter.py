@@ -1,6 +1,5 @@
 ### Dataset is available at: https://grouplens.org/datasets/movielens/1m/
 
-
 import argparse
 import math
 import os
@@ -8,14 +7,7 @@ import os
 import pandas as pd
 from tqdm import tqdm
 
-from consts.consts import INF_STR, LOG_FILT_DATA_PATH
-
-
-def print_and_log(log_file, n_lhs, n_users, n_items, text):
-    info_string = INF_STR.format(n_lhs, n_users, n_items, text)
-    log_file.write(info_string + '\n')
-    print(info_string)
-
+from data.data_utils import LOG_FILT_DATA_PATH, print_and_log
 
 parser = argparse.ArgumentParser()
 
@@ -66,13 +58,13 @@ print_and_log(log_filt_data_file, len(lhs), lhs.user.nunique(), lhs.item.nunique
               '5-core filtering')
 
 # Creating simple integer indexes used for sparse matrices
-user_ids = lhs.user.drop_duplicates().reset_index(drop=True)
-item_ids = lhs.item.drop_duplicates().reset_index(drop=True)
-user_ids.index.name = 'user_id'
-item_ids.index.name = 'item_id'
-user_ids = user_ids.reset_index()
-item_ids = item_ids.reset_index()
-lhs = lhs.merge(user_ids).merge(item_ids)
+user_idxs = lhs.user.drop_duplicates().reset_index(drop=True)
+item_idxs = lhs.item.drop_duplicates().reset_index(drop=True)
+user_idxs.index.name = 'user_idx'
+item_idxs.index.name = 'item_idx'
+user_idxs = user_idxs.reset_index()
+item_idxs = item_idxs.reset_index()
+lhs = lhs.merge(user_idxs).merge(item_idxs)
 
 print('Splitting the data, temporal ordered - ratio-based (80-10-10)')
 
@@ -82,17 +74,12 @@ val_idxs = []
 test_idxs = []
 for user, user_group in tqdm(lhs.groupby('user')):
     # Data is already sorted by timestamp
-    if len(user_group) <= 10:
-        # Not enough data for val/test data. Place the user in train.
-        train_idxs += (list(user_group.index))
-    else:
-        n_train = math.ceil(len(user_group) * 0.8)
-        n_val = math.ceil((len(user_group) - n_train) / 2)
-        n_test = len(user_group) - n_train - n_val
+    n_val = n_test = math.ceil(len(user_group) * 0.1)
+    n_train = len(user_group) - n_val - n_test
 
-        train_idxs += list(user_group.index[:n_train])
-        val_idxs += list(user_group.index[n_train:n_train + n_val])
-        test_idxs += list(user_group.index[-n_test:])
+    train_idxs += list(user_group.index[:n_train])
+    val_idxs += list(user_group.index[n_train:n_train + n_val])
+    test_idxs += list(user_group.index[-n_test:])
 
 train_data = lhs.loc[train_idxs]
 val_data = lhs.loc[val_idxs]
@@ -103,13 +90,14 @@ print_and_log(log_filt_data_file, len(val_data), val_data.user.nunique(), val_da
 print_and_log(log_filt_data_file, len(test_data), test_data.user.nunique(), test_data.item.nunique(), 'Test Data')
 
 log_filt_data_file.close()
-# Saving locally
 
+# Saving locally
 print('Saving data to {}'.format(saving_path))
 
+lhs.to_csv(os.path.join(saving_path, 'listening_history.csv'), index=False)
 train_data.to_csv(os.path.join(saving_path, 'listening_history_train.csv'), index=False)
 val_data.to_csv(os.path.join(saving_path, 'listening_history_val.csv'), index=False)
 test_data.to_csv(os.path.join(saving_path, 'listening_history_test.csv'), index=False)
 
-user_ids.to_csv(os.path.join(saving_path, 'user_ids.csv'), index=False)
-item_ids.to_csv(os.path.join(saving_path, 'item_ids.csv'), index=False)
+user_idxs.to_csv(os.path.join(saving_path, 'user_idxs.csv'), index=False)
+item_idxs.to_csv(os.path.join(saving_path, 'item_idxs.csv'), index=False)

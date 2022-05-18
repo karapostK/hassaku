@@ -1,5 +1,4 @@
-# Dataset is available at http://deepyeti.ucsd.edu/jianmo/amazon/categoryFilesSmall/Video_Games.csv
-# or https://nijianmo.github.io/amazon/index.html -> Video Games -> ratings only
+### Dataset is available at: https://grouplens.org/datasets/movielens/10m/
 
 import argparse
 import math
@@ -13,7 +12,7 @@ from data.data_utils import LOG_FILT_DATA_PATH, print_and_log
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--listening_history_path', '-lh', type=str,
-                    help="Path to 'Video_Games.csv' of the Amazon dataset.")
+                    help="Path to 'ratings.dat' of the Movielens10M dataset.")
 parser.add_argument('--saving_path', '-s', type=str, help="Path where to save the split data. Default to './'",
                     default='./')
 
@@ -22,10 +21,10 @@ args = parser.parse_args()
 listening_history_path = args.listening_history_path
 saving_path = args.saving_path
 
-ratings_path = os.path.join(listening_history_path, 'Video_Games.csv')
+ratings_path = os.path.join(listening_history_path, 'ratings.dat')
 log_filt_data_file = open(LOG_FILT_DATA_PATH, 'w+')
 
-lhs = pd.read_csv(ratings_path, names=['item', 'user', 'rating', 'timestamp'])
+lhs = pd.read_csv(ratings_path, sep='::', names=['user', 'item', 'rating', 'timestamp'])
 
 print_and_log(log_filt_data_file, len(lhs), lhs.user.nunique(), lhs.item.nunique(), 'Original Data')
 
@@ -34,12 +33,6 @@ lhs = lhs[lhs.rating >= 3.5]
 
 print_and_log(log_filt_data_file, len(lhs), lhs.user.nunique(), lhs.item.nunique(),
               'Only Positive Interactions (>= 3.5)')
-
-# Keeping only the first interaction
-lhs = lhs.sort_values('timestamp')
-lhs = lhs.drop_duplicates(subset=['item', 'user'])
-
-print_and_log(log_filt_data_file, len(lhs), lhs.user.nunique(), lhs.item.nunique(), 'Only first interaction')
 
 # 5-core filtering
 while True:

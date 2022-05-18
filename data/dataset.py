@@ -1,4 +1,3 @@
-import math
 import os
 
 import numpy as np
@@ -9,11 +8,11 @@ from torch.utils import data
 """
 The following classes are used to supply the recommender system data to the different methods. In 'data_path', there 
 should be the following csv files:
-- user_ids.csv: containing at least the column `user_id` which is the row index of the user in the interaction matrix.
+- user_idxs.csv: containing at least the column `user_idx` which is the row index of the user in the interaction matrix.
         Possibly, the file also contains the 'id' used in the original dataset. Used in Train and Eval.
-- item_ids.csv: containing at least the column `item_id` which is the column index of the item in the interaction matrix.
+- item_idxs.csv: containing at least the column `item_idx` which is the column index of the item in the interaction matrix.
         Possibly, the file also contains the 'id' used in the original dataset. Used in Train and Eval.
-- listening_history_train.csv: containing at least the columns `user_id` and `item_id` which corresponds to the entries
+- listening_history_train.csv: containing at least the columns `user_idx` and `item_idx` which corresponds to the entries
         in the interaction matrix used for training. Additional columns are allowed. Used in Train.
 - listening_history_val.csv: same as listening_history_train.csv but contains the data used for validation. Used in
         Eval when split_set == val.
@@ -33,19 +32,23 @@ class TrainRecDataset(data.Dataset):
     matrix to carry out fast negative sampling with the slicing functionalities.
     """
 
-    def __init__(self, data_path: str, n_neg: int = 10, neg_sampling_strategy: str = 'uniform'):
+    def __init__(self, data_path: str, n_neg: int = 10, neg_sampling_strategy: str = 'uniform',
+                 squashing_factor_pop_sampling: float = 0.75):
         """
-        :param data_path: Path to the directory with listening_history_train.csv, user_ids.csv, item_ids.csv
+        :param data_path: Path to the directory with listening_history_train.csv, user_idxs.csv, item_idxs.csv
         :param n_neg: Number of negative samples to take for each positive interaction
         :param neg_sampling_strategy: Either 'uniform' or 'popular'. See the respective functions for more details.
+        :param squashing_factor_pop_sampling: Squashing factor for the popularity sampling. Ignored if neg_sampling_strategy = 'uniform'
         """
 
         assert neg_sampling_strategy in ['uniform', 'popular'], \
             f'<{neg_sampling_strategy}> is not a valid negative sampling strategy!'
+        assert squashing_factor_pop_sampling >= 0, 'Squashing factor for popularity sampling should be positive!'
 
         self.data_path = data_path
         self.n_neg = n_neg
         self.neg_sampling_strategy = neg_sampling_strategy
+        self.squashing_factor_pop_sampling = squashing_factor_pop_sampling
 
         self.n_users = None
         self.n_items = None
@@ -70,21 +73,22 @@ class TrainRecDataset(data.Dataset):
               f'- n_items: {self.n_items} \n'
               f'- n_interactions: {self.iteration_matrix.nnz} \n'
               f'- n_neg: {self.n_neg} \n'
-              f'- neg_sampling_strategy: {self.neg_sampling_strategy} \n')
+              f'- neg_sampling_strategy: {self.neg_sampling_strategy} \n'
+              f'- squashing_factor_pop_sampling: {self.squashing_factor_pop_sampling} \n')
 
     def load_data(self):
         print('Loading data')
 
-        user_ids = pd.read_csv(os.path.join(self.data_path, 'user_ids.csv'))
-        item_ids = pd.read_csv(os.path.join(self.data_path, 'item_ids.csv'))
+        user_idxs = pd.read_csv(os.path.join(self.data_path, 'user_idxs.csv'))
+        item_idxs = pd.read_csv(os.path.join(self.data_path, 'item_idxs.csv'))
 
-        self.n_users = len(user_ids)
-        self.n_items = len(item_ids)
+        self.n_users = len(user_idxs)
+        self.n_items = len(item_idxs)
 
         train_lhs = pd.read_csv(os.path.join(self.data_path, 'listening_history_train.csv'))
 
         self.sampling_matrix = sp.csr_matrix(
-            (np.ones(len(train_lhs), dtype=np.int16), (train_lhs.user_id, train_lhs.item_id)),
+            (np.ones(len(train_lhs), dtype=np.int16), (train_lhs.user_idx, train_lhs.item_idx)),
             shape=(self.n_users, self.n_items))
 
         # Computing the popularity distribution (see _neg_sample_popular)
@@ -114,7 +118,7 @@ class TrainRecDataset(data.Dataset):
 
         return sampled
 
-    def _neg_sample_popular(self, row_idx: int, n_neg: int, squashing_factor=.75) -> np.array:
+    def _neg_sample_popular(self, row_idx: int, n_neg: int) -> np.array:
         """
         For a specific user, it samples n_neg items considering the frequency of appearance of items in the dataset, i.e.
         p(i being neg) ∝ (pop_i)^0.75.
@@ -126,7 +130,7 @@ class TrainRecDataset(data.Dataset):
 
         p = self.pop_distribution.copy()
         p[consumed_items] = 0.  # Excluding consumed items
-        p = np.power(p, squashing_factor)  # Applying squashing factor alpha
+        p = np.power(p, self.squashing_factor_pop_sampling)  # Applying squashing factor alpha
         p = p / p.sum()
 
         sampled = np.random.choice(np.arange(self.n_items), n_neg, replace=False, p=p)
@@ -159,7 +163,7 @@ class FullEvalDataset(data.Dataset):
 
     def __init__(self, data_path: str, split_set: str, avoid_zeros_users: bool = True):
         """
-        :param data_path: Path to the directory with listening_history_{val,test}.csv, user_ids.csv, item_ids.csv
+        :param data_path: Path to the directory with listening_history_{val,test}.csv, user_idxs.csv, item_idxs.csv
         :param split_set: Either 'val' or 'test'
         :param avoid_zeros_users: Whether the dataset will also return users with no items on val/test data
         """
@@ -189,16 +193,16 @@ class FullEvalDataset(data.Dataset):
     def load_data(self):
         print('Loading data')
 
-        user_ids = pd.read_csv(os.path.join(self.data_path, 'user_ids.csv'))
-        item_ids = pd.read_csv(os.path.join(self.data_path, 'item_ids.csv'))
+        user_idxs = pd.read_csv(os.path.join(self.data_path, 'user_idxs.csv'))
+        item_idxs = pd.read_csv(os.path.join(self.data_path, 'item_idxs.csv'))
 
-        self.n_users = len(user_ids)
-        self.n_items = len(item_ids)
+        self.n_users = len(user_idxs)
+        self.n_items = len(item_idxs)
 
         eval_lhs = pd.read_csv(os.path.join(self.data_path, f'listening_history_{self.split_set}.csv'))
 
         self.evaluation_matrix = sp.csr_matrix(
-            (np.ones(len(eval_lhs), dtype=np.int16), (eval_lhs.user_id, eval_lhs.item_id)),
+            (np.ones(len(eval_lhs), dtype=np.int16), (eval_lhs.user_idx, eval_lhs.item_idx)),
             shape=(self.n_users, self.n_items))
 
         if self.avoid_zeros_users:
