@@ -157,29 +157,34 @@ class FullEvalDataset(data.Dataset):
     all the users and compute the scores for all items (FullEvaluation).
     """
 
-    def __init__(self, data_path: str, split_set: str):
+    def __init__(self, data_path: str, split_set: str, avoid_zeros_users: bool = True):
         """
         :param data_path: Path to the directory with listening_history_{val,test}.csv, user_ids.csv, item_ids.csv
         :param split_set: Either 'val' or 'test'
+        :param avoid_zeros_users: Whether the dataset will also return users with no items on val/test data
         """
+
         assert split_set in ['val', 'test'], f'<{split_set}> is not a valid value for split set!'
 
         self.data_path = data_path
         self.split_set = split_set
+        self.avoid_zeros_users = avoid_zeros_users
 
         self.n_users = None
         self.n_items = None
 
         self.evaluation_matrix = None
+        self.idx_to_user = None
 
         self.load_data()
 
         print(f'Built FullEvalDataset module \n'
               f'- data_path: {self.data_path} \n'
+              f'- split_set: {self.split_set} \n'
+              f'- avoid_zeros_users: {self.avoid_zeros_users} \n'
               f'- n_users: {self.n_users} \n'
               f'- n_items: {self.n_items} \n'
-              f'- n_interactions: {self.evaluation_matrix.nnz} \n'
-              f'- split_set: {self.split_set} \n')
+              f'- n_interactions: {self.evaluation_matrix.nnz} \n')
 
     def load_data(self):
         print('Loading data')
@@ -196,24 +201,33 @@ class FullEvalDataset(data.Dataset):
             (np.ones(len(eval_lhs), dtype=np.int16), (eval_lhs.user_id, eval_lhs.item_id)),
             shape=(self.n_users, self.n_items))
 
+        if self.avoid_zeros_users:
+            items_per_users = self.evaluation_matrix.getnnz(axis=-1)
+            self.idx_to_user = np.where(items_per_users > 0)[0]
+
         print('End loading data')
 
     def __len__(self):
-        return self.n_users
+        if self.avoid_zeros_users:
+            return len(self.idx_to_user)
+        else:
+            return self.n_users
 
     def __getitem__(self, user_index):
+        if self.avoid_zeros_users:
+            user_index = self.idx_to_user[user_index]
         return user_index, np.arange(self.n_items), self.evaluation_matrix[user_index].toarray().squeeze().astype(
             'float32')
 
 
-class BigDataset(data.Dataset):
+class StubDataset(data.Dataset):
     """
     Dataset used mostly for testing purposes
     """
 
-    def __init__(self):
-        self.n_items = 80000
-        self.n_users = 4000
+    def __init__(self, n_users: int = 4000, n_items: int = 80000):
+        self.n_users = n_users
+        self.n_items = n_items
 
         self.evaluation_matrix = sp.lil_matrix((self.n_users, self.n_items))
 
