@@ -1,16 +1,15 @@
-import typing
-from abc import ABC, abstractmethod
+from abc import ABC
 from functools import partial
+from pathlib import Path
 
 import numpy as np
-import torch
 from scipy import sparse as sp
 
-from algorithms.base_classes import RecommenderAlgorithm
+from algorithms.base_classes import SparseMatrixBasedRecommenderAlgorithm
 from utilities.similarities import SimilarityFunctionEnum
 
 
-class KNNAlgorithm(RecommenderAlgorithm, ABC):
+class KNNAlgorithm(SparseMatrixBasedRecommenderAlgorithm, ABC):
 
     def __init__(self, sim_func_enum: SimilarityFunctionEnum = SimilarityFunctionEnum.cosine, k: int = 100, **kwargs):
         """
@@ -39,26 +38,16 @@ class KNNAlgorithm(RecommenderAlgorithm, ABC):
               f'- sim_func: {self.sim_func} \n'
               f'- k: {self.k} \n')
 
-    @abstractmethod
-    def fit(self, matrix: sp.spmatrix):
-        """
-        :param matrix: user x item sparse matrix
-        """
-        pass
-
-    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union:
-        assert self.pred_mtx is not None, 'Prediction Matrix not computed, run fit!'
-        if sp.issparse(self.pred_mtx):
-            self.pred_mtx = self.pred_mtx.toarray()  # Not elegant but it simplifies the following code
-        out = self.pred_mtx[u_idxs[:, None], i_idxs]
-        return out
-
-    def save_model_to_path(self, path: str):
+    def save_model_to_path(self, path: Path):
+        path /= 'model.npz'
         np.savez(path, pred_mtx=self.pred_mtx)
+        print('Model Saved')
 
-    def load_model_from_path(self, path: str):
+    def load_model_from_path(self, path: Path):
+        path /= 'model.npz'
         with np.load(path) as array_dict:
             self.pred_mtx = array_dict['pred_mtx']
+        print('Model Loaded')
 
     @staticmethod
     def build_from_conf(conf: dict, dataset):
@@ -67,7 +56,7 @@ class KNNAlgorithm(RecommenderAlgorithm, ABC):
         sim_func = SimilarityFunctionEnum[sim_func_params['sim_func_name']]
         alpha = sim_func_params['alpha'] if 'alpha' in sim_func_params else None
         beta = sim_func_params['beta'] if 'beta' in sim_func_params else None
-        if conf['alg'].value == UserKNN:
+        if conf['alg'] == UserKNN:
             return UserKNN(sim_func, k, alpha=alpha, beta=beta)
         else:
             return ItemKNN(sim_func, k, alpha=alpha, beta=beta)
@@ -112,7 +101,7 @@ class ItemKNN(KNNAlgorithm):
         print('End Fitting')
 
 
-def take_only_top_k(sim_mtx, k=100):
+def take_only_top_k(sim_mtx: sp.csr_matrix, k=100):
     """
     It slims down the similarity matrix by only picking the top-k most similar users/items for each user/item.
     This also allow to perform the prediction with a simple matrix multiplication

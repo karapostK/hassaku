@@ -1,9 +1,11 @@
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Union, Tuple
 
 import torch
-from torch import nn
+from torch import nn, Tensor
 from torch.utils import data
+from scipy import sparse as sp
 
 
 class RecommenderAlgorithm(ABC):
@@ -30,13 +32,13 @@ class RecommenderAlgorithm(ABC):
         """
 
     @abstractmethod
-    def save_model_to_path(self, path: str):
+    def save_model_to_path(self, path: Path):
         """
         Saves the necessary data to reconstruct this class to a specified path
         """
 
     @abstractmethod
-    def load_model_from_path(self, path: str):
+    def load_model_from_path(self, path: Path):
         """
         Load the necessary data to reconstruct a previous model from a specified path
         """
@@ -47,6 +49,33 @@ class RecommenderAlgorithm(ABC):
         """
         Build the class from a configuration dictionary
         """
+
+
+class SparseMatrixBasedRecommenderAlgorithm(RecommenderAlgorithm, ABC):
+    """
+    Base class for Recommender System algorithms that can be trained using the sparse user-item matrix
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.name = 'SparseMatrixBasedRecommenderAlgorithm'
+
+        self.pred_mtx = None
+        print(f'Built {self.name} module')
+
+    @abstractmethod
+    def fit(self, matrix: sp.spmatrix):
+        """
+        :param matrix: user x item sparse matrix
+        """
+        pass
+
+    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor):
+        assert self.pred_mtx is not None, 'Prediction Matrix not computed, run fit!'
+        if sp.issparse(self.pred_mtx):
+            self.pred_mtx = self.pred_mtx.toarray()  # Not elegant but it simplifies the following code
+        out = self.pred_mtx[u_idxs[:, None], i_idxs]
+        return out
 
 
 class SGDBasedRecommenderAlgorithm(RecommenderAlgorithm, ABC, nn.Module):
@@ -100,14 +129,14 @@ class SGDBasedRecommenderAlgorithm(RecommenderAlgorithm, ABC, nn.Module):
         """
         pass
 
-    def get_and_reset_other_loss(self) -> float:
+    def get_and_reset_other_loss(self) -> Tensor:
         """
         Gets and reset the value of other losses defined for the specific module which go beyond the recommender system
         loss and the l2 loss. For example an entropy-based loss for ProtoMF. This function is always called by Trainer
         at the end of the batch pass to get the full loss! Be sure to implement it when the algorithm has additional losses!
         :return: loss of the feature extractor
         """
-        return 0
+        return torch.zeros(1)
 
     @torch.no_grad()
     def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
@@ -115,9 +144,13 @@ class SGDBasedRecommenderAlgorithm(RecommenderAlgorithm, ABC, nn.Module):
         out = self(u_idxs, i_idxs)
         return out
 
-    def save_model_to_path(self, path: str):
+    def save_model_to_path(self, path: Path):
+        path /= 'model.pth'
         torch.save(self.state_dict(), path)
+        print('Model Saved')
 
-    def load_model_from_path(self, path: str):
+    def load_model_from_path(self, path: Path):
+        path /= 'model.pth'
         state_dict = torch.load(path)
         self.load_state_dict(state_dict)
+        print('Model Loaded')

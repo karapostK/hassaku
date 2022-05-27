@@ -1,4 +1,5 @@
 import typing
+from pathlib import Path
 
 import implicit
 import maxvolpy
@@ -7,10 +8,10 @@ import torch
 from scipy import sparse as sp
 from scipy.sparse.linalg import svds
 
-from algorithms.base_classes import RecommenderAlgorithm
+from algorithms.base_classes import RecommenderAlgorithm, SparseMatrixBasedRecommenderAlgorithm
 
 
-class SVDAlgorithm(RecommenderAlgorithm):
+class SVDAlgorithm(SparseMatrixBasedRecommenderAlgorithm):
 
     def __init__(self, factors: int = 100):
         """
@@ -28,16 +29,6 @@ class SVDAlgorithm(RecommenderAlgorithm):
         print(f'Built {self.name} module \n'
               f'- factors: {self.factors} ')
 
-    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union[np.ndarray, torch.Tensor]:
-        assert (self.users_factors is not None) and \
-               (self.items_factors is not None), 'User and Item factors are None! Call fit before predict'
-
-        batch_users = self.users_factors[u_idxs]
-        batch_items = self.items_factors[i_idxs]
-        out = (batch_items * batch_users[:, None, :]).sum(axis=-1)  # Carrying out the dot product
-
-        return out
-
     def fit(self, matrix: sp.spmatrix):
         print('Starting Fitting')
         matrix = matrix.asfptype()  # casting to float
@@ -48,21 +39,35 @@ class SVDAlgorithm(RecommenderAlgorithm):
         self.items_factors = vt.T
         print('End Fitting')
 
-    def save_model_to_path(self, path: str):
-        np.savez(path, users_factors=self.users_factors, items_factors=self.items_factors)
+    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor):
+        assert (self.users_factors is not None) and \
+               (self.items_factors is not None), 'User and Item factors are None! Call fit before predict'
 
-    def load_model_from_path(self, path: str):
+        batch_users = self.users_factors[u_idxs]
+        batch_items = self.items_factors[i_idxs]
+        out = (batch_items * batch_users[:, None, :]).sum(axis=-1)  # Carrying out the dot product
+
+        return out
+
+    def save_model_to_path(self, path: Path):
+        path /= 'model.npz'
+        np.savez(path, users_factors=self.users_factors, items_factors=self.items_factors)
+        print('Model Saved')
+
+    def load_model_from_path(self, path: Path):
+        path /= 'model.npz'
         with np.load(path) as array_dict:
             self.users_factors = array_dict['users_factors']
             self.items_factors = array_dict['items_factors']
+        print('Model Loaded')
 
     @staticmethod
     def build_from_conf(conf: dict, dataset):
         return SVDAlgorithm(conf['n_factors'])
 
 
-class AlternatingLeastSquare(RecommenderAlgorithm):
-    def __init__(self, alpha: int, factors: int, regularization: float, n_iterations: int):
+class AlternatingLeastSquare(SparseMatrixBasedRecommenderAlgorithm):
+    def __init__(self, alpha: int, factors: int, regularization: float, n_iterations: int, use_gpu: bool = True):
         super().__init__()
         '''
         From Collaborative Filtering for Implicit Datasets (http://yifanhu.net/PUB/cf.pdf)
@@ -71,12 +76,14 @@ class AlternatingLeastSquare(RecommenderAlgorithm):
         :param factors: embedding size
         :param regularization: regularization factor (the l2 factor)
         :param iter: number of iterations for ALS
+        :param use_gpu: whether to use the gpu for training
         '''
 
         self.alpha = alpha
         self.factors = factors * 32
         self.regularization = regularization
         self.n_iterations = n_iterations
+        self.use_gpu = use_gpu
 
         self.users_factors = None
         self.items_factors = None
@@ -87,17 +94,19 @@ class AlternatingLeastSquare(RecommenderAlgorithm):
               f'- alpha: {self.alpha} \n'
               f'- factors: {self.factors} \n'
               f'- regularization: {self.regularization} \n'
-              f'- n_iterations: {self.n_iterations} \n')
+              f'- n_iterations: {self.n_iterations} \n'
+              f'- use_gpu: {self.use_gpu} \n')
 
-    def fit(self, matrix: sp.spmatrix, use_gpu: bool = True):
+    def fit(self, matrix: sp.spmatrix):
         print('Starting Fitting')
 
         matrix = sp.csr_matrix(matrix.T)
         als = implicit.als.AlternatingLeastSquares(factors=self.factors,
                                                    regularization=self.regularization,
                                                    iterations=self.n_iterations,
-                                                   use_gpu=use_gpu,
+                                                   use_gpu=self.use_gpu,
                                                    num_threads=10)
+        print(self.alpha)
         als.fit(self.alpha * matrix)
 
         self.items_factors = als.item_factors
@@ -114,20 +123,25 @@ class AlternatingLeastSquare(RecommenderAlgorithm):
 
         return out
 
-    def save_model_to_path(self, path: str):
+    def save_model_to_path(self, path: Path):
+        path /= 'model.npz'
         np.savez(path, users_factors=self.users_factors, items_factors=self.items_factors)
+        print('Model Saved')
 
-    def load_model_from_path(self, path: str):
+    def load_model_from_path(self, path: Path):
+        path /= 'model.npz'
         with np.load(path) as array_dict:
             self.users_factors = array_dict['users_factors']
             self.items_factors = array_dict['items_factors']
+        print('Model Loaded')
 
     @staticmethod
     def build_from_conf(conf: dict, dataset):
-        return AlternatingLeastSquare(conf['alpha'], conf['factors'], conf['regularization'], conf['n_iterations'])
+        return AlternatingLeastSquare(conf['alpha'], conf['factors'], conf['regularization'], conf['n_iterations'],
+                                      conf['use_gpu'])
 
 
-class RBMF(RecommenderAlgorithm):
+class RBMF(SparseMatrixBasedRecommenderAlgorithm):
 
     def __init__(self, n_representatives: int, lam: float = 1e-2):
         super().__init__()
@@ -175,13 +189,17 @@ class RBMF(RecommenderAlgorithm):
 
         return out
 
-    def save_model_to_path(self, path: str):
+    def save_model_to_path(self, path: Path):
+        path /= 'model.npz'
         np.savez(path, X=self.X, C=self.C)
+        print('Model Saved')
 
-    def load_model_from_path(self, path: str):
+    def load_model_from_path(self, path: Path):
+        path /= 'model.npz'
         with np.load(path) as array_dict:
             self.X = array_dict['X']
             self.C = array_dict['C']
+        print('Model Loaded')
 
     @staticmethod
     def build_from_conf(conf: dict, dataset):

@@ -1,19 +1,17 @@
 import itertools
 import multiprocessing
-import typing
 import warnings
+from pathlib import Path
 
 import numpy as np
-import torch
 from scipy import sparse as sp
 from sklearn.linear_model import ElasticNet
 from tqdm import trange
 
-from algorithms.base_classes import RecommenderAlgorithm
-from utilities.utils import generate_slices
+from algorithms.base_classes import SparseMatrixBasedRecommenderAlgorithm
 
 
-class SLIM(RecommenderAlgorithm):
+class SLIM(SparseMatrixBasedRecommenderAlgorithm):
 
     def __init__(self, alpha: float, l1_ratio: float, max_iter: int):
         """
@@ -112,23 +110,23 @@ class SLIM(RecommenderAlgorithm):
 
         return W_rows_idxs, W_cols_idxs, W_data
 
-    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union:
-        out = self.pred_mtx[u_idxs[:, None], i_idxs]
-        return out
-
-    def save_model_to_path(self, path: str):
+    def save_model_to_path(self, path: Path):
+        path /= 'model.npz'
         np.savez(path, pred_mtx=self.pred_mtx)
+        print('Model Saved')
 
-    def load_model_from_path(self, path: str):
+    def load_model_from_path(self, path: Path):
+        path /= 'model.npz'
         with np.load(path) as array_dict:
             self.pred_mtx = array_dict['pred_mtx']
+        print('Model Loaded')
 
     @staticmethod
-    def build_from_conf(conf: dict,dataset):
+    def build_from_conf(conf: dict, dataset):
         return SLIM(conf['alpha'], conf['l1_ratio'], conf['max_iter'])
 
 
-class EASE(RecommenderAlgorithm):
+class EASE(SparseMatrixBasedRecommenderAlgorithm):
 
     def __init__(self, lam: int):
         """
@@ -159,19 +157,44 @@ class EASE(RecommenderAlgorithm):
         B[diagIndicies] = 0
 
         self.pred_mtx = matrix @ B
-        self.pred_mtx = self.pred_mtx.toarray()
 
-    def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> typing.Union:
-        out = self.pred_mtx[u_idxs[:, None], i_idxs]
-        return out
-
-    def save_model_to_path(self, path: str):
+    def save_model_to_path(self, path: Path):
+        path /= 'model.npz'
         np.savez(path, pred_mtx=self.pred_mtx)
+        print('Model Saved')
 
-    def load_model_from_path(self, path: str):
+    def load_model_from_path(self, path: Path):
+        path /= 'model.npz'
         with np.load(path) as array_dict:
             self.pred_mtx = array_dict['pred_mtx']
+        print('Model Loaded')
 
     @staticmethod
-    def build_from_conf(conf: dict,dataset):
+    def build_from_conf(conf: dict, dataset):
         return EASE(conf['lam'])
+
+
+def generate_slices(total_columns):
+    """
+    Generate slices that will be processed based on the number of cores
+    available on the machine.
+    """
+    from multiprocessing import cpu_count
+
+    cores = cpu_count()
+    print('Running on {} cores'.format(cores))
+    segment_length = total_columns // cores
+
+    ranges = []
+    now = 0
+
+    while now < total_columns:
+        end = now + segment_length
+
+        # The last part can be a little greater that others in some cases, but
+        # we can't generate more than #cores ranges
+        end = end if end + segment_length <= total_columns else total_columns
+        ranges.append((now, end))
+        now = end
+
+    return ranges
