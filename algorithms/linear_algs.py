@@ -1,7 +1,7 @@
 import itertools
 import multiprocessing
+import os
 import warnings
-from pathlib import Path
 
 import numpy as np
 from scipy import sparse as sp
@@ -110,13 +110,13 @@ class SLIM(SparseMatrixBasedRecommenderAlgorithm):
 
         return W_rows_idxs, W_cols_idxs, W_data
 
-    def save_model_to_path(self, path: Path):
-        path /= 'model.npz'
+    def save_model_to_path(self, path: str):
+        path = os.path.join(path, 'model.npz')
         np.savez(path, pred_mtx=self.pred_mtx)
         print('Model Saved')
 
-    def load_model_from_path(self, path: Path):
-        path /= 'model.npz'
+    def load_model_from_path(self, path: str):
+        path = os.path.join(path, 'model.npz')
         with np.load(path) as array_dict:
             self.pred_mtx = array_dict['pred_mtx']
         print('Model Loaded')
@@ -158,13 +158,13 @@ class EASE(SparseMatrixBasedRecommenderAlgorithm):
 
         self.pred_mtx = matrix @ B
 
-    def save_model_to_path(self, path: Path):
-        path /= 'model.npz'
+    def save_model_to_path(self, path: str):
+        path = os.path.join(path, 'model.npz')
         np.savez(path, pred_mtx=self.pred_mtx)
         print('Model Saved')
 
-    def load_model_from_path(self, path: Path):
-        path /= 'model.npz'
+    def load_model_from_path(self, path: str):
+        path = os.path.join(path, 'model.npz')
         with np.load(path) as array_dict:
             self.pred_mtx = array_dict['pred_mtx']
         print('Model Loaded')

@@ -1,5 +1,5 @@
+import os.path
 from abc import ABC, abstractmethod
-from pathlib import Path
 from typing import Union, Tuple
 
 import torch
@@ -32,13 +32,13 @@ class RecommenderAlgorithm(ABC):
         """
 
     @abstractmethod
-    def save_model_to_path(self, path: Path):
+    def save_model_to_path(self, path: str):
         """
         Saves the necessary data to reconstruct this class to a specified path
         """
 
     @abstractmethod
-    def load_model_from_path(self, path: Path):
+    def load_model_from_path(self, path: str):
         """
         Load the necessary data to reconstruct a previous model from a specified path
         """
@@ -144,13 +144,13 @@ class SGDBasedRecommenderAlgorithm(RecommenderAlgorithm, ABC, nn.Module):
         out = self(u_idxs, i_idxs)
         return out
 
-    def save_model_to_path(self, path: Path):
-        path /= 'model.pth'
+    def save_model_to_path(self, path: str):
+        path = os.path.join(path, 'model.pth')
         torch.save(self.state_dict(), path)
         print('Model Saved')
 
-    def load_model_from_path(self, path: Path):
-        path /= 'model.pth'
+    def load_model_from_path(self, path: str):
+        path = os.path.join(path, 'model.pth')
         state_dict = torch.load(path)
         self.load_state_dict(state_dict)
         print('Model Loaded')

@@ -1,5 +1,5 @@
+import os
 import typing
-from pathlib import Path
 
 import implicit
 import maxvolpy
@@ -49,13 +49,13 @@ class SVDAlgorithm(SparseMatrixBasedRecommenderAlgorithm):
 
         return out
 
-    def save_model_to_path(self, path: Path):
-        path /= 'model.npz'
+    def save_model_to_path(self, path: str):
+        path = os.path.join(path, 'model.npz')
         np.savez(path, users_factors=self.users_factors, items_factors=self.items_factors)
         print('Model Saved')
 
-    def load_model_from_path(self, path: Path):
-        path /= 'model.npz'
+    def load_model_from_path(self, path: str):
+        path = os.path.join(path, 'model.npz')
         with np.load(path) as array_dict:
             self.users_factors = array_dict['users_factors']
             self.items_factors = array_dict['items_factors']
@@ -123,13 +123,13 @@ class AlternatingLeastSquare(SparseMatrixBasedRecommenderAlgorithm):
 
         return out
 
-    def save_model_to_path(self, path: Path):
-        path /= 'model.npz'
+    def save_model_to_path(self, path: str):
+        path = os.path.join(path, 'model.npz')
         np.savez(path, users_factors=self.users_factors, items_factors=self.items_factors)
         print('Model Saved')
 
-    def load_model_from_path(self, path: Path):
-        path /= 'model.npz'
+    def load_model_from_path(self, path: str):
+        path = os.path.join(path, 'model.npz')
         with np.load(path) as array_dict:
             self.users_factors = array_dict['users_factors']
             self.items_factors = array_dict['items_factors']
@@ -189,13 +189,13 @@ class RBMF(SparseMatrixBasedRecommenderAlgorithm):
 
         return out
 
-    def save_model_to_path(self, path: Path):
-        path /= 'model.npz'
+    def save_model_to_path(self, path: str):
+        path = os.path.join(path, 'model.npz')
         np.savez(path, X=self.X, C=self.C)
         print('Model Saved')
 
-    def load_model_from_path(self, path: Path):
-        path /= 'model.npz'
+    def load_model_from_path(self, path: str):
+        path = os.path.join(path, 'model.npz')
         with np.load(path) as array_dict:
             self.X = array_dict['X']
             self.C = array_dict['C']

@@ -1,5 +1,4 @@
 import warnings
-from pathlib import Path
 from typing import Union
 
 import numpy as np
@@ -21,10 +20,10 @@ class RandomItems(RecommenderAlgorithm):
         out = torch.rand(i_idxs.shape)
         return out
 
-    def save_model_to_path(self, path: Path):
+    def save_model_to_path(self, path: str):
         pass
 
-    def load_model_from_path(self, path: Path):
+    def load_model_from_path(self, path: str):
         pass
 
     @staticmethod
@@ -49,10 +48,10 @@ class PopularItems(RecommenderAlgorithm):
         out = self.pop_distribution[i_idxs]
         return out
 
-    def save_model_to_path(self, path: Path):
+    def save_model_to_path(self, path: str):
         pass
 
-    def load_model_from_path(self, path: Path):
+    def load_model_from_path(self, path: str):
         pass
 
     @staticmethod
