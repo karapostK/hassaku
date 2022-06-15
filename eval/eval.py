@@ -4,7 +4,8 @@ import torch
 from torch.utils.data import DataLoader
 
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm, RecommenderAlgorithm
-from consts.consts import K_VALUES
+from eval.eval_utils import K_VALUES
+
 from eval.metrics import precision_at_k_batch, ndcg_at_k_batch, recall_at_k_batch
 from utilities.utils import print_results
 
