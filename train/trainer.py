@@ -1,3 +1,5 @@
+import os
+
 import torch
 import wandb
 from torch import nn
@@ -105,7 +107,7 @@ class Trainer:
                 out = self.model(u_idxs, i_idxs)
 
                 rec_loss = self.rec_loss.compute_loss(out, labels)
-                reg_loss = self.pointer_to_model.get_and_reset_other_loss()
+                reg_loss = self.pointer_to_model.get_and_reset_other_loss().to(rec_loss.device)
                 loss = rec_loss + reg_loss
 
                 epoch_train_loss += loss.item()

@@ -7,6 +7,10 @@ from scipy.sparse import linalg as sp_linalg
 
 from utilities.utils import FunctionWrapper
 
+"""
+NB. The following similarities functions have been considered for implicit data! All of them assume that matrix is a sparse matrix with 0s and 1s. 
+"""
+
 
 def compute_jaccard_sim_mtx(matrix):
     jaccard_sim_mtx = (matrix @ matrix.T)

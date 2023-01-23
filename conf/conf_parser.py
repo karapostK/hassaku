@@ -24,7 +24,7 @@ DEF_REC_LOSS = 'bce'
 DEF_LOSS_AGGREGATOR = 'mean'
 DEF_DEVICE = 'cpu'
 DEF_OPTIMIZING_METRIC = 'ndcg@10'
-DEF_MAX_PATIENCE = DEF_N_EPOCHS
+DEF_MAX_PATIENCE = DEF_N_EPOCHS - 1
 
 
 def parse_yaml(conf_path: str) -> dict:
@@ -110,7 +110,7 @@ def parse_conf(conf: dict, alg: AlgorithmsEnum, dataset: DatasetsEnum) -> dict:
             conf['wd'] = DEF_WEIGHT_DECAY
             added_parameters_list.append(f"wd={conf['wd']}")
         else:
-            assert conf['lr'] > 0, f"Weight Decay ({conf['wd']}) should be positive"
+            assert conf['wd'] > 0, f"Weight Decay ({conf['wd']}) should be positive"
 
         if 'optimizer' not in conf:
             conf['optimizer'] = DEF_OPTIMIZER
