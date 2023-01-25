@@ -4,7 +4,7 @@ import torch
 import wandb
 from torch import nn
 from torch.utils import data
-from tqdm import trange
+from tqdm import trange, tqdm
 
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm
 from eval.eval import evaluate_recommender_algorithm
@@ -55,6 +55,7 @@ class Trainer:
         self.model_path = conf['model_path']
 
         self.use_wandb = conf['running_settings']['use_wandb']
+        self.batch_verbose = conf['running_settings']['batch_verbose']
 
         self.best_value = None
         self.best_metrics = None
@@ -70,6 +71,7 @@ class Trainer:
               f'- lr: {self.lr} \n'
               f'- wd: {self.wd} \n'
               f'- use_wandb: {self.use_wandb} \n'
+              f'- batch_verbose: {self.batch_verbose} \n'
               f'- max_patience: {self.max_patience} \n')
 
     def fit(self):
@@ -99,7 +101,12 @@ class Trainer:
 
             epoch_train_loss = epoch_train_rec_loss = epoch_train_reg_loss = 0
 
-            for u_idxs, i_idxs, labels in self.train_loader:
+            if self.batch_verbose:
+                iterator = tqdm(self.train_loader)
+            else:
+                iterator = self.train_loader
+
+            for u_idxs, i_idxs, labels in iterator:
                 u_idxs = u_idxs.to(self.device)
                 i_idxs = i_idxs.to(self.device)
                 labels = labels.to(self.device)

@@ -24,7 +24,7 @@ DEF_REC_LOSS = 'bce'
 DEF_LOSS_AGGREGATOR = 'mean'
 DEF_DEVICE = 'cpu'
 DEF_OPTIMIZING_METRIC = 'ndcg@10'
-DEF_MAX_PATIENCE = DEF_N_EPOCHS - 1
+DEF_BATCH_VERBOSE = False
 
 
 def parse_yaml(conf_path: str) -> dict:
@@ -110,7 +110,7 @@ def parse_conf(conf: dict, alg: AlgorithmsEnum, dataset: DatasetsEnum) -> dict:
             conf['wd'] = DEF_WEIGHT_DECAY
             added_parameters_list.append(f"wd={conf['wd']}")
         else:
-            assert conf['wd'] > 0, f"Weight Decay ({conf['wd']}) should be positive"
+            assert conf['wd'] >= 0, f"Weight Decay ({conf['wd']}) should be positive"
 
         if 'optimizer' not in conf:
             conf['optimizer'] = DEF_OPTIMIZER
@@ -144,7 +144,7 @@ def parse_conf(conf: dict, alg: AlgorithmsEnum, dataset: DatasetsEnum) -> dict:
             added_parameters_list.append(f"optimizing_metric={conf['optimizing_metric']}")
 
         if 'max_patience' not in conf:
-            conf['max_patience'] = DEF_MAX_PATIENCE
+            conf['max_patience'] = conf['n_epochs'] - 1
             added_parameters_list.append(f"max_patience={conf['max_patience']}")
         else:
             assert 0 < conf['max_patience'] < conf[
@@ -153,6 +153,10 @@ def parse_conf(conf: dict, alg: AlgorithmsEnum, dataset: DatasetsEnum) -> dict:
         if 'n_workers' not in conf['running_settings']:
             conf['running_settings']['n_workers'] = DEF_NUM_WORKERS
             added_parameters_list.append(f"n_workers={conf['running_settings']['n_workers']}")
+
+        if 'batch_verbose' not in conf['running_settings']:
+            conf['running_settings']['batch_verbose'] = DEF_BATCH_VERBOSE
+            added_parameters_list.append(f"batch_verbose={conf['running_settings']['batch_verbose']}")
 
     print('Added these default parameters: ', ", ".join(added_parameters_list))
     print('For more detail, see conf/conf_parser.py')
