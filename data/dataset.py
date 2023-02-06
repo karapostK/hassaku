@@ -23,8 +23,7 @@ should be the following csv files:
 
 class RecDataset(data.Dataset):
     """
-    Dataset to hold Recommender System data and train collaborative filtering algorithms. It allows iteration over the
-    dataset of positive interactions.
+    Dataset to hold Recommender System data in the format of a pandas dataframe.
     """
 
     def __init__(self, data_path: str, split_set: str):
@@ -38,11 +37,9 @@ class RecDataset(data.Dataset):
         self.n_users = None
         self.n_items = None
 
-        self.iteration_matrix = None
+        self.lhs = None
 
-        self.pop_distribution = None
-
-        self.load_data()
+        self._load_data()
 
         self.name = "RecDataset"
         print(f'Built {self.name} module \n'
@@ -50,9 +47,9 @@ class RecDataset(data.Dataset):
               f'- split_set: {self.split_set} \n'
               f'- n_users: {self.n_users} \n'
               f'- n_items: {self.n_items} \n'
-              f'- n_interactions: {self.iteration_matrix.nnz} \n')
+              f'- n_interactions: {len(self.lhs)} \n')
 
-    def load_data(self):
+    def _load_data(self):
         print('Loading data')
 
         user_idxs = pd.read_csv(os.path.join(self.data_path, 'user_idxs.csv'))
@@ -61,22 +58,65 @@ class RecDataset(data.Dataset):
         self.n_users = len(user_idxs)
         self.n_items = len(item_idxs)
 
-        lhs = pd.read_csv(os.path.join(self.data_path, f'listening_history_{self.split_set}.csv'))
+        self.lhs = self._load_lhs(self.split_set)
 
-        if self.split_set == 'train':
-            type_matrix = sp.coo_matrix  # During training we iterate over the single interactions
-        else:
-            type_matrix = sp.csr_matrix  # During evaluation we iterate user-wise
+        print('End loading data')
 
-        self.iteration_matrix = type_matrix(
-            (np.ones(len(lhs), dtype=np.int16), (lhs.user_idx, lhs.item_idx)),
+    def _load_lhs(self, split_set: str):
+        return pd.read_csv(os.path.join(self.data_path, f'listening_history_{split_set}.csv'))
+
+    def __len__(self):
+        raise NotImplementedError("RecDataset does not support __len__ or __getitem__. Please use TrainRecDataset for"
+                                  "training or FullEvalDataset for evaluation.")
+
+    def __getitem__(self, index):
+        raise NotImplementedError("RecDataset does not support __len__ or __getitem__. Please use TrainRecDataset for"
+                                  "training or FullEvalDataset for evaluation.")
+
+
+class TrainRecDataset(RecDataset):
+    """
+    Dataset to hold Recommender System data and train collaborative filtering algorithms. It allows iteration over the
+    dataset of positive interaction. It also stores the item popularity distribution over the training data.
+
+    Additional notes:
+    The data is loaded twice. Once the data is stored in a COO matrix to easily iterate over the dataset. Once in a CSR
+    matrix to carry out fast negative sampling with the user-wise slicing functionalities (see also collate_fn in data/dataloader.py)
+    """
+
+    def __init__(self, data_path: str, delete_lhs: bool = True):
+        """
+        :param data_path: Path to the directory with listening_history_train.csv, user_idxs.csv, item_idxs.csv
+        :param delete_lhs: Whether the pandas dataframe should be deleted after creating the iteration/sampling mtxs.
+        """
+
+        super().__init__(data_path, 'train')
+
+        self.delete_lhs = delete_lhs
+
+        self.iteration_matrix = None
+        self.sampling_matrix = None
+
+        self.pop_distribution = None
+
+        self._prepare_data()
+
+        self.name = 'TrainRecDataset'
+        print(f'Built {self.name} module \n'
+              f'- delete_lhs: {self.delete_lhs} \n')
+
+    def _prepare_data(self):
+        self.iteration_matrix = sp.coo_matrix(
+            (np.ones(len(self.lhs), dtype=np.int16), (self.lhs.user_idx, self.lhs.item_idx)),
             shape=(self.n_users, self.n_items))
 
-        # Computing the popularity distribution
+        self.sampling_matrix = sp.csr_matrix(self.iteration_matrix)
+
         item_popularity = np.array(self.iteration_matrix.sum(axis=0)).flatten()
         self.pop_distribution = item_popularity / item_popularity.sum()
 
-        print('End loading data')
+        if self.delete_lhs:
+            del self.lhs
 
     def __len__(self):
         return self.iteration_matrix.nnz
@@ -88,140 +128,63 @@ class RecDataset(data.Dataset):
         return user_idx, item_idx, 1.
 
 
-class TrainRecDataset(RecDataset):
-    """
-    Dataset to hold Recommender System data and train collaborative filtering algorithms. It allows iteration over the
-    dataset of positive interaction and offers negative sampling functionalities (e.g. for each positive pair,
-    sample n_neg negative samples).
-
-    Additional notes:
-    The data is loaded twice. Once the data is stored in a COO matrix to easily iterate over the dataset. Once in a CSR
-    matrix to carry out fast negative sampling with the slicing functionalities.
-    """
-
-    def __init__(self, data_path: str, n_neg: int = 10, neg_sampling_strategy: str = 'uniform',
-                 squashing_factor_pop_sampling: float = 0.75):
-        """
-        :param data_path: Path to the directory with listening_history_train.csv, user_idxs.csv, item_idxs.csv
-        :param n_neg: Number of negative samples to take for each positive interaction
-        :param neg_sampling_strategy: Either 'uniform' or 'popular'. See the respective functions for more details.
-        :param squashing_factor_pop_sampling: Squashing factor for the popularity sampling. Ignored if neg_sampling_strategy = 'uniform'
-        """
-
-        super().__init__(data_path, 'train')
-        assert neg_sampling_strategy in ['uniform', 'popular'], \
-            f'<{neg_sampling_strategy}> is not a valid negative sampling strategy!'
-        assert squashing_factor_pop_sampling >= 0, 'Squashing factor for popularity sampling should be positive!'
-
-        self.n_neg = n_neg
-        self.neg_sampling_strategy = neg_sampling_strategy
-        self.squashing_factor_pop_sampling = squashing_factor_pop_sampling
-
-        self.sampling_matrix = sp.csr_matrix(self.iteration_matrix)
-
-        if self.neg_sampling_strategy == 'uniform':
-            self.neg_sampler = self._neg_sample_uniform
-        elif self.neg_sampling_strategy == 'popular':
-            self.neg_sampler = self._neg_sample_popular
-        else:
-            raise ValueError('Error with the choice of neg_sampling strategy')
-
-        self.name = 'TrainRecDataset'
-        print(f'Built {self.name} module \n'
-              f'- n_neg: {self.n_neg} \n'
-              f'- neg_sampling_strategy: {self.neg_sampling_strategy} \n'
-              f'- squashing_factor_pop_sampling: {self.squashing_factor_pop_sampling} \n')
-
-    def _neg_sample_uniform(self, row_idx: int, n_neg: int) -> np.array:
-        """
-        For a specific user, it samples n_neg items u.a.r.
-        :param row_idx: user id (or row in the matrix)
-        :param n_neg: number of negative samples
-        :return: npy array containing the negatively sampled items.
-        """
-
-        consumed_items = self.sampling_matrix[row_idx].indices
-
-        # Uniform distribution without items consumed by the user
-        p = np.ones(self.n_items)
-        p[consumed_items] = 0.  # Excluding consumed items
-        p = p / p.sum()
-
-        sampled = np.random.choice(np.arange(self.n_items), n_neg, replace=False, p=p)
-
-        return sampled
-
-    def _neg_sample_popular(self, row_idx: int, n_neg: int) -> np.array:
-        """
-        For a specific user, it samples n_neg items considering the frequency of appearance of items in the dataset, i.e.
-        p(i being neg) ∝ (pop_i)^0.75.
-        :param row_idx: user id (or row in the matrix)
-        :param n_neg: number of negative samples
-        :return: npy array containing the negatively sampled items.
-        """
-        consumed_items = self.sampling_matrix[row_idx].indices
-
-        p = self.pop_distribution.copy()
-        p[consumed_items] = 0.  # Excluding consumed items
-        p = np.power(p, self.squashing_factor_pop_sampling)  # Applying squashing factor alpha
-        p = p / p.sum()
-
-        sampled = np.random.choice(np.arange(self.n_items), n_neg, replace=False, p=p)
-        return sampled
-
-    def __getitem__(self, index):
-
-        user_idx, item_idx_pos, _ = super().__getitem__(index)
-
-        # Negative sampling
-        neg_samples = self.neg_sampler(user_idx, self.n_neg)
-
-        item_idxs = np.concatenate(([item_idx_pos], neg_samples)).astype('int64')
-
-        labels = np.zeros(1 + self.n_neg, dtype='float32')
-        labels[0] = 1.
-
-        return user_idx, item_idxs, labels
-
-
 class FullEvalDataset(RecDataset):
     """
     Dataset to hold Recommender System data and evaluate collaborative filtering algorithms. It allows iteration over
-    all the users and compute the scores for all items (FullEvaluation).
+    all the users and compute the scores for all items (FullEvaluation). It also holds data from training and validation
+    that needs to be excluded from the evaluation:
+    During validation, items in the training data for a user are excluded as labels
+    During test, items in the training data and validation for a user are excluded as labels
     """
 
-    def __init__(self, data_path: str, split_set: str, avoid_zeros_users: bool = True):
+    def __init__(self, data_path: str, split_set: str, delete_lhs: bool = True):
         """
         :param data_path: Path to the directory with listening_history_{val,test}.csv, user_idxs.csv, item_idxs.csv
         :param split_set: Either 'val' or 'test'
-        :param avoid_zeros_users: Whether the dataset will also return users with no items on val/test data
+        :param delete_lhs: Whether the pandas dataframe should be deleted after creating the iteration/sampling mtxs.
         """
 
         super().__init__(data_path, split_set)
 
-        self.avoid_zeros_users = avoid_zeros_users
+        self.delete_lhs = delete_lhs
 
         self.idx_to_user = None
-        if self.avoid_zeros_users:
-            items_per_users = self.iteration_matrix.getnnz(axis=-1)
-            self.idx_to_user = np.where(items_per_users > 0)[0]
+        self.iteration_matrix = None
+        self.exclude_data = None
 
-        self.load_data()
+        self._prepare_data()
 
         self.name = 'FullEvalDataset'
 
         print(f'Built {self.name} module \n'
-              f'- avoid_zeros_users: {self.avoid_zeros_users} \n')
+              f'- delete_lhs: {self.delete_lhs} \n')
+
+    def _prepare_data(self):
+        self.iteration_matrix = sp.csr_matrix(
+            (np.ones(len(self.lhs), dtype=np.int16), (self.lhs.user_idx, self.lhs.item_idx)),
+            shape=(self.n_users, self.n_items))
+
+        # Load Train data as well
+        train_lhs = self._load_lhs('train')
+        self.exclude_data = sp.csr_matrix(
+            (np.ones(len(train_lhs), dtype=bool), (train_lhs.user_idx, train_lhs.item_idx)),
+            shape=(self.n_users, self.n_items)
+        )
+        # If 'split_test' load also Valid data
+        if self.split_set == 'test':
+            val_lhs = self._load_lhs('val')
+            self.exclude_data += sp.csr_matrix(
+                (np.ones(len(val_lhs), dtype=bool), (val_lhs.user_idx, val_lhs.item_idx)),
+                shape=(self.n_users, self.n_items)
+            )
+
+        if self.delete_lhs:
+            del self.lhs
 
     def __len__(self):
-        if self.avoid_zeros_users:
-            return len(self.idx_to_user)
-        else:
-            return self.n_users
+        return self.n_users
 
     def __getitem__(self, user_index):
-        if self.avoid_zeros_users:
-            user_index = self.idx_to_user[user_index]
         return user_index, np.arange(self.n_items), self.iteration_matrix[user_index].toarray().squeeze().astype(
             'float32')
 

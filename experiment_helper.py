@@ -1,12 +1,12 @@
 import typing
-import wandb
 
+import wandb
 from algorithms.algorithms_utils import AlgorithmsEnum
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm, SparseMatrixBasedRecommenderAlgorithm
 from algorithms.naive_algs import PopularItems
 from conf.conf_parser import parse_yaml, parse_conf, save_yaml
 from data.data_utils import DatasetsEnum, get_dataloader
-from data.dataset import RecDataset
+from data.dataset import TrainRecDataset
 from eval.eval import evaluate_recommender_algorithm
 from train.trainer import Trainer
 from utilities.utils import reproducible
@@ -40,7 +40,7 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union
         save_yaml(conf['model_path'], conf)
 
     elif issubclass(alg.value, SparseMatrixBasedRecommenderAlgorithm):
-        train_dataset = RecDataset(conf['dataset_path'], 'train')
+        train_dataset = TrainRecDataset(conf['dataset_path'])
         val_loader = get_dataloader(conf, 'val')
 
         alg = alg.value.build_from_conf(conf, train_dataset)
@@ -56,7 +56,7 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union
             wandb.log(metrics_values)
     elif alg in [AlgorithmsEnum.rand, AlgorithmsEnum.pop]:
 
-        train_dataset = RecDataset(conf['dataset_path'], 'train')
+        train_dataset = TrainRecDataset(conf['dataset_path'])
         val_loader = get_dataloader(conf, 'val')
 
         alg = alg.value.build_from_conf(conf, train_dataset)
@@ -84,7 +84,7 @@ def run_test(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union[str,
 
     if alg.value == PopularItems:
         # Popular Items requires the popularity distribution over the items learned over the training data
-        alg = alg.value.build_from_conf(conf, RecDataset(conf['dataset_path'], 'train'))
+        alg = alg.value.build_from_conf(conf, TrainRecDataset(conf['dataset_path']))
     else:
         alg = alg.value.build_from_conf(conf, test_loader.dataset)
 
