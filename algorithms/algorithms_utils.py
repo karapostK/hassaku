@@ -11,7 +11,7 @@ from algorithms.sgd_alg import SGDMatrixFactorization, UProtoMF, UIProtoMF, IPro
 class AlgorithmsEnum(Enum):
     uknn = UserKNN
     iknn = ItemKNN
-    logmf = SGDMatrixFactorization  # Logistic Matrix Factorization
+    mf = SGDMatrixFactorization  # Logistic Matrix Factorization
     sgdbias = SGDBaseline
     pop = PopularItems
     rand = RandomItems

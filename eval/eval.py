@@ -75,7 +75,8 @@ def evaluate_recommender_algorithm(alg: RecommenderAlgorithm, eval_loader: DataL
 
             out = alg.predict(u_idxs, i_idxs)
 
-            batch_mask = eval_loader.dataset.exclude_data[u_idxs].A.to(device)
+            #todo: this seems unnecessarily expensive, can it be improved?
+            batch_mask = torch.tensor(eval_loader.dataset.exclude_data[u_idxs.cpu()].A).to(device)
             out[batch_mask] = -torch.inf
 
             if not isinstance(out, torch.Tensor):
@@ -94,7 +95,7 @@ def evaluate_recommender_algorithm(alg: RecommenderAlgorithm, eval_loader: DataL
             u_repr = alg.get_user_representations(u_idxs)
             out = alg.combine_user_item_representations(u_repr, i_repr)
 
-            batch_mask = eval_loader.dataset.exclude_data[u_idxs].A.to(device)
+            batch_mask = torch.tensor(eval_loader.dataset.exclude_data[u_idxs.cpu()].A).to(device)
             out[batch_mask] = -torch.inf
 
             evaluator.eval_batch(out, labels)
