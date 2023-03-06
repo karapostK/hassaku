@@ -66,6 +66,9 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union
     else:
         raise ValueError(f'Training for {alg.value} has been not implemented')
 
+    if conf['running_settings']['use_wandb']:
+        wandb.finish()
+
     return metrics_values, conf
 
 
@@ -93,6 +96,7 @@ def run_test(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union[str,
     metrics_values = evaluate_recommender_algorithm(alg, test_loader)
     if conf['running_settings']['use_wandb']:
         wandb.log(metrics_values)
+        wandb.finish()
 
 
 def run_train_val_test(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf_path: str):
