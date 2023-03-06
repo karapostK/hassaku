@@ -35,7 +35,7 @@ class KNNAlgorithm(SparseMatrixBasedRecommenderAlgorithm, ABC):
         self.name = 'KNNAlgorithm'
 
         print(f'Built {self.name} module \n'
-              f'- sim_func: {self.sim_func} \n'
+              f'- sim_func: {self.sim_func.__name__} \n'
               f'- k: {self.k} \n')
 
     def save_model_to_path(self, path: str):
@@ -123,8 +123,10 @@ def take_only_top_k(sim_mtx: sp.csr_matrix, k=100):
         ind = sim_mtx.indices[start_idx:end_idx]
 
         # Avoiding taking the user/item itself
-        self_idx = np.where(ind == idx)[0][0]
-        data[self_idx] = 0.
+        if len(data) > 0:
+            # The if is there to avoid cases where there are no closest neighbours (so even the sim to itself is 0)
+            self_idx = np.where(ind == idx)[0][0]
+            data[self_idx] = 0.
 
         top_k_indxs = np.argsort(-data)[:k]
 
