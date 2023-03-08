@@ -45,7 +45,7 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union
 
         alg = alg.value.build_from_conf(conf, train_dataset)
         # -- Training --
-        alg.fit(train_dataset.iteration_matrix)
+        alg.fit(train_dataset.sampling_matrix)
         # -- Validation --
         metrics_values = evaluate_recommender_algorithm(alg, val_loader)
 
@@ -61,6 +61,9 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union
 
         alg = alg.value.build_from_conf(conf, train_dataset)
         metrics_values = evaluate_recommender_algorithm(alg, val_loader)
+
+        save_yaml(conf['model_path'], conf)
+
         if conf['running_settings']['use_wandb']:
             wandb.log(metrics_values)
     else:

@@ -35,7 +35,7 @@ class KNNAlgorithm(SparseMatrixBasedRecommenderAlgorithm, ABC):
         self.name = 'KNNAlgorithm'
 
         print(f'Built {self.name} module \n'
-              f'- sim_func: {self.sim_func.__name__} \n'
+              f'- sim_func: {self.sim_func_enum.name} \n'
               f'- k: {self.k} \n')
 
     def save_model_to_path(self, path: str):

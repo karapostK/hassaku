@@ -1,7 +1,6 @@
 from enum import Enum
 
 import numpy as np
-import scipy as sc
 from scipy import sparse as sp
 from scipy.sparse import linalg as sp_linalg
 
@@ -10,62 +9,53 @@ from utilities.utils import FunctionWrapper
 """
 NB. The following similarities functions have been considered for implicit data! All of them assume that matrix is 
 a sparse matrix with 0s and 1s. 
+NB. The following code assumes that:
+1) The whole sparse matrix, after computing the similarities, can be stored in memory.
+2) All the non-zero entries before normalization (so the numerator of the similarities) can be stored in memory
+The code could be potentially be optimized by considering iterative block computation, merging the similarity computing
+with the "take_only_top_k" from knn_algs.py. However, for the hardware at my disposal this is not needed.
 """
 
 
 def compute_jaccard_sim_mtx(matrix):
-    jaccard_sim_mtx = (matrix @ matrix.T)
+    counts = np.array(matrix.sum(axis=1)).squeeze()
 
-    counts = np.array(matrix.sum(axis=1)).squeeze() + 1e-8
-    try:
-        union = counts.T + counts - jaccard_sim_mtx  # may cause a memory error!
-        jaccard_sim_mtx = sp.csr_matrix(jaccard_sim_mtx / union)
-    except MemoryError as e:
-        print('Resorting to slower method (never checked if it terminates though)')
-        rows_nz, cols_nz = jaccard_sim_mtx.nonzero()
-        jaccard_sim_mtx[rows_nz, cols_nz] = jaccard_sim_mtx[rows_nz, cols_nz] / (
-                counts[rows_nz] + counts[cols_nz] - jaccard_sim_mtx[rows_nz, cols_nz] + + 1e-8)
+    jaccard_sim_mtx = sp.coo_matrix(matrix @ matrix.T)
+
+    jaccard_sim_mtx.data = jaccard_sim_mtx.data / (
+            counts[jaccard_sim_mtx.row] + counts[jaccard_sim_mtx.col] - jaccard_sim_mtx.data)
+
+    jaccard_sim_mtx = sp.csr_matrix(jaccard_sim_mtx)
 
     return jaccard_sim_mtx
 
 
 def compute_cosine_sim_mtx(matrix):
-    norms = sp_linalg.norm(matrix, axis=1) + 1e-8
+    norms = sp_linalg.norm(matrix, axis=1)
 
-    normalized_matrix = sp.csr_matrix((matrix.T / norms).T)
+    cosine_sim_mtx = sp.coo_matrix(matrix @ matrix.T)
 
-    cosine_sim_mtx = normalized_matrix @ normalized_matrix.T
+    cosine_sim_mtx.data = cosine_sim_mtx.data / (norms[cosine_sim_mtx.row] * norms[cosine_sim_mtx.col])
+    cosine_sim_mtx = sp.csr_matrix(cosine_sim_mtx)
 
     return cosine_sim_mtx
 
 
 def compute_pearson_sim_mtx(matrix):
     means = np.array(matrix.mean(axis=1)).flatten()
-    matrix_no_mean = matrix.copy().asfptype()
+    pearson_sim_mtx = matrix.copy().asfptype()
 
     for indx in range(matrix.shape[0]):
-        matrix_no_mean.data[matrix.indptr[indx]:matrix.indptr[indx + 1]] -= means[indx]
+        pearson_sim_mtx.data[matrix.indptr[indx]:matrix.indptr[indx + 1]] -= means[indx]
 
-    norms_no_mean = sp_linalg.norm(matrix_no_mean, axis=1) + 1e-8
+    norms_no_mean = sp_linalg.norm(pearson_sim_mtx, axis=1)
 
-    normalized_matrix_no_mean = sp.csr_matrix((matrix_no_mean.T / norms_no_mean).T)
+    pearson_sim_mtx = sp.coo_matrix(pearson_sim_mtx @ pearson_sim_mtx.T)
+    pearson_sim_mtx.data = pearson_sim_mtx.data / (
+            norms_no_mean[pearson_sim_mtx.row] * norms_no_mean[pearson_sim_mtx.col])
 
-    pearson_sim_mtx = normalized_matrix_no_mean @ normalized_matrix_no_mean.T
-
+    pearson_sim_mtx = sp.csr_matrix(pearson_sim_mtx)
     return pearson_sim_mtx
-
-
-def compute_pearson_dense_sim_mtx(matrix):
-    means = np.array(matrix.mean(axis=1)).flatten()
-
-    matrix_no_mean = matrix - means[:, None]
-
-    norms_no_mean = sc.linalg.norm(matrix_no_mean, axis=1)
-
-    normalized_matrix_no_mean = (matrix_no_mean.T / norms_no_mean).T
-
-    pearson_dense_sim_mtx = sp.csr_matrix(normalized_matrix_no_mean @ normalized_matrix_no_mean.T)
-    return pearson_dense_sim_mtx
 
 
 def compute_asymmetric_cosine_sim_mtx(alpha, matrix):
@@ -74,29 +64,36 @@ def compute_asymmetric_cosine_sim_mtx(alpha, matrix):
     sums_alpha = np.power(sums, alpha)
     sums_1_min_alpha = np.power(sums, 1 - alpha)
 
-    denominator = np.outer(sums_alpha, sums_1_min_alpha) + + 1e-8
+    asymmetric_sim_mtx = sp.coo_matrix(matrix @ matrix.T)
+    asymmetric_sim_mtx.data = asymmetric_sim_mtx.data / (
+            sums_alpha[asymmetric_sim_mtx.row] * sums_1_min_alpha[asymmetric_sim_mtx.col])
 
-    asymmetric_sim_mtx = sp.csr_matrix((matrix @ matrix.T) / denominator)
+    asymmetric_sim_mtx = sp.csr_matrix(asymmetric_sim_mtx)
     return asymmetric_sim_mtx
 
 
 def compute_sorensen_dice_sim_mtx(matrix):
-    intersection = (matrix @ matrix.T)
+    counts = np.array(matrix.sum(axis=1)).squeeze()
 
-    counts = matrix.sum(axis=1)
-    counts_sum = counts + counts.T + + 1e-8
+    sorensedice_sim_mtx = sp.coo_matrix(matrix @ matrix.T)
 
-    sorensedice_sim_mtx = sp.csr_matrix(2 * intersection / counts_sum)
+    sorensedice_sim_mtx.data = 2 * sorensedice_sim_mtx.data / (
+            counts[sorensedice_sim_mtx.row] + counts[sorensedice_sim_mtx.col])
+
+    sorensedice_sim_mtx = sp.csr_matrix(sorensedice_sim_mtx)
     return sorensedice_sim_mtx
 
 
 def compute_tversky_sim_mtx(alpha, beta, matrix):
-    intersection = (matrix @ matrix.T)
+    counts = np.array(matrix.sum(axis=1)).squeeze()
 
-    counts = matrix.sum(axis=1)
-    complement = counts - intersection
+    tversky_sim_mtx = sp.coo_matrix(matrix @ matrix.T)
 
-    tversky_sim_mtx = sp.csr_matrix(intersection / (intersection + alpha * complement + beta * complement.T  + 1e-8))
+    tversky_sim_mtx.data = tversky_sim_mtx.data / (
+            tversky_sim_mtx.data + alpha * (counts[tversky_sim_mtx.row] - tversky_sim_mtx.data) + beta * (
+            counts[tversky_sim_mtx.col] - tversky_sim_mtx.data))
+
+    tversky_sim_mtx = sp.csr_matrix(tversky_sim_mtx)
     return tversky_sim_mtx
 
 
