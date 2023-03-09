@@ -11,16 +11,20 @@ from utilities.similarities import SimilarityFunctionEnum, compute_similarity_to
 
 class KNNAlgorithm(SparseMatrixBasedRecommenderAlgorithm, ABC):
 
-    def __init__(self, sim_func_enum: SimilarityFunctionEnum = SimilarityFunctionEnum.cosine, k: int = 100, **kwargs):
+    def __init__(self, sim_func_enum: SimilarityFunctionEnum = SimilarityFunctionEnum.cosine, k: int = 100,
+                 shrinkage: float = .0, **kwargs):
         """
         Abstract class for K-nearest neighbours
         :param sim_func_enum: similarity function to use
         :param k: number of k nearest neighbours to consider
+        :param shrinkage: shrinkage factor. Higher the value, higher the penalization for similarities computed
+        on small support set between entities. (see https://dl.acm.org/doi/pdf/10.1145/1281192.1281206)
         :param kwargs: additional parameters for the similarity function (e.g. alpha for asymmetric cosine)
         """
         super().__init__()
 
-        self.BLOCK_SIZE = 10000  # how many max entities are involved in the similarity computation at one point in time.
+        self.BLOCK_SIZE = 10000  # how many max entities are involved in the similarity computation at one point in
+        # time.
 
         self.sim_func_enum = sim_func_enum
         self.sim_func = sim_func_enum.value
@@ -31,6 +35,7 @@ class KNNAlgorithm(SparseMatrixBasedRecommenderAlgorithm, ABC):
             self.sim_func = partial(self.sim_func, kwargs['alpha'], kwargs['beta'])
 
         self.k = k
+        self.shrinkage = shrinkage
 
         self.pred_mtx = None
 
@@ -38,7 +43,8 @@ class KNNAlgorithm(SparseMatrixBasedRecommenderAlgorithm, ABC):
 
         print(f'Built {self.name} module \n'
               f'- sim_func: {self.sim_func_enum.name} \n'
-              f'- k: {self.k} \n')
+              f'- k: {self.k} \n'
+              f'- shrinkage: {self.shrinkage} \n')
 
     def save_model_to_path(self, path: str):
         path = os.path.join(path, 'model.npz')
@@ -58,16 +64,18 @@ class KNNAlgorithm(SparseMatrixBasedRecommenderAlgorithm, ABC):
         sim_func = SimilarityFunctionEnum[sim_func_params['sim_func_name']]
         alpha = sim_func_params['alpha'] if 'alpha' in sim_func_params else None
         beta = sim_func_params['beta'] if 'beta' in sim_func_params else None
+        shrinkage = conf['shrinkage'] if 'shrinkage' in conf else .0
         if conf['alg'] == 'uknn':
-            return UserKNN(sim_func, k, alpha=alpha, beta=beta)
+            return UserKNN(sim_func, k, shrinkage, alpha=alpha, beta=beta)
         else:
-            return ItemKNN(sim_func, k, alpha=alpha, beta=beta)
+            return ItemKNN(sim_func, k, shrinkage, alpha=alpha, beta=beta)
 
 
 class UserKNN(KNNAlgorithm):
 
-    def __init__(self, sim_func: SimilarityFunctionEnum = SimilarityFunctionEnum.cosine, k: int = 100, **kwargs):
-        super().__init__(sim_func, k, **kwargs)
+    def __init__(self, sim_func: SimilarityFunctionEnum = SimilarityFunctionEnum.cosine, k: int = 100,
+                 shrinkage: float = .0, **kwargs):
+        super().__init__(sim_func, k, shrinkage, **kwargs)
         self.name = 'UserKNN'
         print(f'Built {self.name} module \n')
 
@@ -77,7 +85,7 @@ class UserKNN(KNNAlgorithm):
         """
         print('Starting Fitting')
 
-        sim_mtx = compute_similarity_top_k(matrix, self.sim_func, self.k, self.BLOCK_SIZE)
+        sim_mtx = compute_similarity_top_k(matrix, self.sim_func, self.k, self.shrinkage, self.BLOCK_SIZE)
 
         self.pred_mtx = sim_mtx @ matrix
         print('End Fitting')
@@ -85,8 +93,9 @@ class UserKNN(KNNAlgorithm):
 
 class ItemKNN(KNNAlgorithm):
 
-    def __init__(self, sim_func: SimilarityFunctionEnum = SimilarityFunctionEnum.cosine, k: int = 100, **kwargs):
-        super().__init__(sim_func, k, **kwargs)
+    def __init__(self, sim_func: SimilarityFunctionEnum = SimilarityFunctionEnum.cosine, k: int = 100,
+                 shrinkage: float = .0, **kwargs):
+        super().__init__(sim_func, k, shrinkage, **kwargs)
         self.name = 'ItemKNN'
         print(f'Built {self.name} module \n')
 
@@ -96,7 +105,7 @@ class ItemKNN(KNNAlgorithm):
         """
         print('Starting Fitting')
 
-        sim_mtx = compute_similarity_top_k(matrix.T, self.sim_func, self.k, self.BLOCK_SIZE)
+        sim_mtx = compute_similarity_top_k(matrix.T, self.sim_func, self.k, self.shrinkage, self.BLOCK_SIZE)
 
         self.pred_mtx = matrix @ sim_mtx.T
 

@@ -15,7 +15,7 @@ NB. The following code assumes that the whole sparse matrix, after computing the
 """
 
 
-def compute_similarity_top_k(matrix, sim_function, k, block_size=6048):
+def compute_similarity_top_k(matrix, sim_function, k, shrinkage, block_size=6048):
     """
     Computes the similarity matrix from the given matrix (each row is considered as an entity).
     It keeps only the k highest similarities.
@@ -33,7 +33,7 @@ def compute_similarity_top_k(matrix, sim_function, k, block_size=6048):
 
     for step in trange(steps):
         sub_mtx = matrix[step * block_size: (step + 1) * block_size, :]
-        sub_sim_mtx = sim_function(matrix, sub_mtx, step, block_size)
+        sub_sim_mtx = sim_function(matrix, sub_mtx, shrinkage, step, block_size)
 
         for idx in range(sub_sim_mtx.shape[0]):
             start_idx = sub_sim_mtx.indptr[idx]
@@ -61,57 +61,62 @@ def compute_similarity_top_k(matrix, sim_function, k, block_size=6048):
     return sp.csr_matrix((new_data, new_indices, new_indptr), shape=(n_entities, n_entities))
 
 
-def compute_jaccard_sim_mtx(matrix, sub_mtx, step, block_size):
+def compute_jaccard_sim_mtx(matrix, sub_mtx, shrinkage, step, block_size):
     counts = np.array(matrix.sum(axis=1)).squeeze()
 
     sub_mtx = sp.coo_matrix(sub_mtx @ matrix.T)
+
+    shrink_factors = sub_mtx.data / (sub_mtx.data + shrinkage)
     sub_mtx.data /= (counts[sub_mtx.row + (step * block_size)] + counts[
         sub_mtx.col] - sub_mtx.data)
+    sub_mtx.data *= shrink_factors
 
     return sp.csr_matrix(sub_mtx)
 
 
-def compute_cosine_sim_mtx(matrix, sub_mtx, step, block_size):
+def compute_cosine_sim_mtx(matrix, sub_mtx, shrinkage, step, block_size):
     norms = sp_linalg.norm(matrix, axis=1)
 
     sub_mtx = sp.coo_matrix(sub_mtx @ matrix.T)
+    shrink_factors = sub_mtx.data / (sub_mtx.data + shrinkage)
     sub_mtx.data = sub_mtx.data / (norms[sub_mtx.row + (step * block_size)] * norms[sub_mtx.col])
-
+    sub_mtx.data *= shrink_factors
     return sp.csr_matrix(sub_mtx)
 
 
-def compute_asymmetric_cosine_sim_mtx(alpha, matrix, sub_mtx, step, block_size):
+def compute_asymmetric_cosine_sim_mtx(alpha, matrix, sub_mtx, shrinkage, step, block_size):
     sums = np.squeeze(np.asarray(matrix.sum(axis=1)))
 
     sums_alpha = np.power(sums, alpha)
     sums_1_min_alpha = np.power(sums, 1 - alpha)
 
     sub_mtx = sp.coo_matrix(sub_mtx @ matrix.T)
+    shrink_factors = sub_mtx.data / (sub_mtx.data + shrinkage)
     sub_mtx.data /= (
             sums_alpha[sub_mtx.row + (step * block_size)] * sums_1_min_alpha[sub_mtx.col])
-
+    sub_mtx.data *= shrink_factors
     return sp.csr_matrix(sub_mtx)
 
 
-def compute_sorensen_dice_sim_mtx(matrix, sub_mtx, step, block_size):
+def compute_sorensen_dice_sim_mtx(matrix, sub_mtx, shrinkage, step, block_size):
     counts = np.array(matrix.sum(axis=1)).squeeze()
 
     sub_mtx = sp.coo_matrix(sub_mtx @ matrix.T)
-
+    shrink_factors = sub_mtx.data / (sub_mtx.data + shrinkage)
     sub_mtx.data /= (counts[sub_mtx.row + (step * block_size)] + counts[sub_mtx.col])
     sub_mtx.data *= 2
-
+    sub_mtx.data *= shrink_factors
     return sp.csr_matrix(sub_mtx)
 
 
-def compute_tversky_sim_mtx(alpha, beta, matrix, sub_mtx, step, block_size):
+def compute_tversky_sim_mtx(alpha, beta, matrix, sub_mtx, shrinkage, step, block_size):
     counts = np.array(matrix.sum(axis=1)).squeeze()
 
     sub_mtx = sp.coo_matrix(sub_mtx @ matrix.T)
-
+    shrink_factors = sub_mtx.data / (sub_mtx.data + shrinkage)
     sub_mtx.data /= (sub_mtx.data + alpha * (counts[sub_mtx.row + (step * block_size)] - sub_mtx.data) + beta * (
             counts[sub_mtx.col] - sub_mtx.data))
-
+    sub_mtx.data *= shrink_factors
     return sp.csr_matrix(sub_mtx)
 
 
