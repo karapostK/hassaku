@@ -1,290 +1,199 @@
-import os
-from collections import defaultdict
+import typing
+import warnings
 
-import numpy as np
-import torch
 import wandb
+from ray import air
 from ray import tune
-from ray.tune.integration.wandb import WandbLoggerCallback
-from ray.tune.stopper import CombinedStopper, TrialPlateauStopper
-from torch.utils.data import DataLoader
+from ray.air import session
+from ray.air.integrations.wandb import WandbLoggerCallback
+from ray.tune.search.hyperopt import HyperOptSearch
 
-from algorithms.base_classes import SGDBasedRecommenderAlgorithm
-from algorithms.naive_algs import PopularItems, RandomItems
-from consts.consts import PROJECT_NAME, WANDB_API_KEY_PATH, SEED_LIST, DATA_PATH, OPTIMIZING_METRIC, SINGLE_SEED, \
-    ENTITY_NAME, EVAL_BATCH_SIZE
-from consts.enums import RecAlgorithmsEnum, RecDatasetsEnum
-from data.dataset import TrainRecDataset, FullEvalDataset
+from algorithms.algorithms_utils import AlgorithmsEnum
+from algorithms.base_classes import SGDBasedRecommenderAlgorithm, SparseMatrixBasedRecommenderAlgorithm
+from algorithms.naive_algs import PopularItems
+from conf.conf_parser import parse_yaml, parse_conf
+from data.data_utils import DatasetsEnum, get_dataloader
+from data.dataset import TrainRecDataset
+from eval.eval import evaluate_recommender_algorithm
 from hyper_search.hyper_params import alg_param
-from hyper_search.utils import KeepOnlyTopTrials, NoImprovementsStopper, HyperOptSearchMaxMetric
-from train.trainer import ExperimentConfig, Trainer
-from utilities.eval import evaluate_recommender_algorithm
+from train.trainer import Trainer
 from utilities.utils import generate_id, reproducible
+from wandb_conf import PROJECT_NAME, ENTITY_NAME, WANDB_API_KEY_PATH
 
 
-def load_data(conf: dict, split_set: str, **kwargs):
-    if split_set == 'train':
-        return DataLoader(
-            TrainRecDataset(
-                data_path=conf['data_path'],
-                n_neg=conf['neg_train'] if "neg_train" in conf else 4,
-                neg_sampling_strategy=conf['train_neg_strategy'] if 'train_neg_strategy' in conf else 'uniform',
-            ),
-            batch_size=conf['batch_size'] if 'batch_size' in conf else 64,
-            shuffle=True,
-            num_workers=kwargs['n_workers'] if 'n_workers' in kwargs else 2
-        )
-
-    elif split_set == 'val':
-        return DataLoader(
-            FullEvalDataset(
-                data_path=conf['data_path'],
-                split_set='val',
-            ),
-            batch_size=kwargs['eval_batch_size'] if 'eval_batch_size' in kwargs else EVAL_BATCH_SIZE
-        )
-
-    elif split_set == 'test':
-        return DataLoader(
-            FullEvalDataset(
-                data_path=conf['data_path'],
-                split_set='test',
-            ),
-            batch_size=kwargs['eval_batch_size'] if 'eval_batch_size' in kwargs else EVAL_BATCH_SIZE
-        )
-
-
-def tune_training(conf: dict, checkpoint_dir=None):
+def tune_training(conf: dict):
     """
     Function executed by ray tune. It corresponds to a single trial.
     """
+    conf['_in_tune'] = True
+    reproducible(conf['running_settings']['seed'])
+    conf['model_path'] = tune.get_trial_dir()
 
-    train_loader = load_data(conf, 'train', **conf['experiment_settings'])
-    val_loader = load_data(conf, 'val')
+    alg = AlgorithmsEnum[conf['alg']]
 
-    reproducible(conf['seed'])
+    if issubclass(alg.value, SGDBasedRecommenderAlgorithm):
+        train_loader = get_dataloader(conf, 'train')
+        val_loader = get_dataloader(conf, 'val')
 
-    alg = conf['alg'].value.build_from_conf(conf, train_loader.dataset)
-    with tune.checkpoint_dir(0) as checkpoint_dir:
+        alg = alg.value.build_from_conf(conf, train_loader.dataset)
 
-        if isinstance(alg, SGDBasedRecommenderAlgorithm):
-
-            checkpoint_file = os.path.join(checkpoint_dir, 'best_model.pth')
-            conf['n_epochs'] = conf['experiment_settings']['n_epochs']
-            conf['best_model_path'] = checkpoint_file
-            exp_conf = ExperimentConfig.build_from_conf(conf)
-
-            # Validation happens within Trainer
-            trainer = Trainer(alg, train_loader, val_loader, exp_conf)
-            trainer.fit()
-
-        else:
-            checkpoint_file = os.path.join(checkpoint_dir, 'best_model.npz')
-            # -- Training --
-            # todo: ensure that all algorithms have the following method!
-            alg.fit(train_loader.dataset.iteration_matrix)
-
-            # -- Validation --
-            metrics_values = evaluate_recommender_algorithm(alg, val_loader)
-            tune.report(**metrics_values)
-
-            # -- Save --
-            alg.save_model_to_path(checkpoint_file)
+        # Validation happens within the Trainer
+        trainer = Trainer(alg, train_loader, val_loader, conf)
+        metrics_values = trainer.fit()
 
 
-def run_train_val(conf: dict, run_name: str):
+    elif issubclass(alg.value, SparseMatrixBasedRecommenderAlgorithm):
+        train_dataset = TrainRecDataset(conf['dataset_path'])
+        val_loader = get_dataloader(conf, 'val')
+
+        alg = alg.value.build_from_conf(conf, train_dataset)
+
+        # -- Training --
+        alg.fit(train_dataset.sampling_matrix)
+        # -- Validation --
+        metrics_values = evaluate_recommender_algorithm(alg, val_loader)
+        metrics_values['max_optimizing_metric'] = metrics_values[conf['optimizing_metric']]
+
+        alg.save_model_to_path(conf['model_path'])
+
+        session.report(metrics_values)
+
+    elif alg in [AlgorithmsEnum.rand, AlgorithmsEnum.pop]:
+        warnings.warn("You are running hyperparameter optimization using rand or pop algorithms which do not have any "
+                      "hyperparameters. Are you sure of what you are doing?")
+
+        train_dataset = TrainRecDataset(conf['dataset_path'])
+        val_loader = get_dataloader(conf, 'val')
+
+        alg = alg.value.build_from_conf(conf, train_dataset)
+        metrics_values = evaluate_recommender_algorithm(alg, val_loader)
+        metrics_values['max_optimizing_metric'] = metrics_values[conf['optimizing_metric']]
+
+        session.report(metrics_values)
+    else:
+        raise ValueError(f'Training for {alg.value} has been not implemented')
+
+    return metrics_values
+
+
+def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union[str, dict], **kwargs):
     """
     Runs the train and validation procedure.
     """
+    print('Starting Train and Val')
+    # Reading fixed parameters (NB. some parameters might be overridden by the hyperparameters)
+    if isinstance(conf, str):
+        conf = parse_yaml(conf)
+
+    conf['_in_tune'] = True
+    conf = parse_conf(conf, alg, dataset)
+    time_run = conf['time_run']
+
+    # Adding hyperparameters and settings related to hyperparameters
+    conf = {**conf, **alg_param[alg], 'hyperparameter_settings': kwargs}
 
     # Hyperparameter Optimization
-    metric_name = OPTIMIZING_METRIC
+    # The optimizing metric should be set in conf_parser.py and not here.
+    optimizing_metric = 'max_optimizing_metric'
 
     # Search Algorithm
-    search_alg = HyperOptSearchMaxMetric(random_state_seed=conf['seed'])
+    search_alg = HyperOptSearch(random_state_seed=conf['running_settings']['seed'])
 
     # Logger
     log_callback = WandbLoggerCallback(project=PROJECT_NAME, log_config=True, api_key_file=WANDB_API_KEY_PATH,
-                                       reinit=True, force=True, job_type='train/val', tags=run_name.split('_'),
-                                       entity=ENTITY_NAME)
+                                       reinit=True, force=True, job_type='hyper - train/val',
+                                       tags=[alg.name, dataset.name, time_run, 'hyper'],
+                                       entity=ENTITY_NAME, group=f'{alg.name} - {dataset.name} - hyper - train/val')
 
-    keep_callback = KeepOnlyTopTrials(metric_name, n_tops=3)
-
-    # Stopper
-    stopper = CombinedStopper(
-        NoImprovementsStopper(metric_name, max_patience=10),
-        TrialPlateauStopper(metric_name, std=1e-5, num_results=5, grace_period=10)
-    )
+    # Saving the models only for the best n_tops models.
+    # keep_callback = KeepOnlyTopTrials(optimizing_metric, n_tops=3)
 
     # Other experiment's settings
-    experiment_name = generate_id(prefix=run_name)
-    experiment_settings = conf['experiment_settings']
-    conf['device'] = 'cuda' if experiment_settings['n_gpus'] > 0 and torch.cuda.is_available() else 'cpu'
-    conf['run_name'] = run_name
-    conf['experiment_name'] = experiment_name
+    hyperparameter_settings = conf['hyperparameter_settings']
 
-    tune.register_trainable(run_name, tune_training)
-    tune.run(
-        run_name,
-        config=conf,
-        name=experiment_name,
-        resources_per_trial={'gpu': experiment_settings['n_gpus'], 'cpu': experiment_settings['n_cpus']},
-        search_alg=search_alg,
-        num_samples=experiment_settings['n_samples'],
-        callbacks=[log_callback, keep_callback],
-        metric=metric_name,
-        stop=stopper,
-        max_concurrent_trials=experiment_settings['n_concurrent'],
+    # Setting up Tune configurations
+    tune_config = tune.TuneConfig(
+        metric=optimizing_metric,
         mode='max',
-        fail_fast='raise',
+        search_alg=search_alg,
+        num_samples=hyperparameter_settings["n_samples"],
+        max_concurrent_trials=hyperparameter_settings["n_concurrent"],
+        trial_name_creator=lambda x: generate_id(postfix=x.trial_id),
+        trial_dirname_creator=lambda x: generate_id(postfix=x.trial_id)
     )
 
-    best_value, best_checkpoint, best_config = keep_callback.get_best_trial()
+    run_config = air.RunConfig(
+        local_dir=f'./hyper_saved_models/{alg.name}-{dataset.name}',
+        name=time_run,
+        callbacks=[log_callback],
+        failure_config=air.FailureConfig(fail_fast=True)
+    )
 
-    print('Train and Val ended')
+    # Setting up the resources per trial
+    if hyperparameter_settings['n_gpus'] > 0:
+        tune_training_with_resources = tune.with_resources(tune_training,
+                                                           {'gpu': hyperparameter_settings['n_gpus']})
+    else:
+        tune_training_with_resources = tune_training
+
+    tuner = tune.Tuner(tune_training_with_resources,
+                       param_space=conf,
+                       tune_config=tune_config,
+                       run_config=run_config)
+    results = tuner.fit()
+
+    print('Hyperparameter optimization ended')
+    best_result = results.get_best_result()
+    best_value = best_result.metrics['max_optimizing_metric']
+    best_config = best_result.config
+    best_checkpoint = best_result.log_dir
+
+    print(f'Best val value is: \n {best_value}')
     print(f'Best configuration is: \n {best_config}')
     print(f'Best checkpoint is: \n {best_checkpoint}')
 
-    # Logging info to file for easier post-processing
-    keep_callback.log_bests(os.path.expanduser(os.path.join('~/ray_results', experiment_name)))
-
     return best_config, best_checkpoint
+    # # Logging info to file for easier post-processing
+    # keep_callback.log_bests(os.path.expanduser(os.path.join('~/ray_results', experiment_name)))
+    #
+    # return best_config, best_checkpoint
 
 
-def run_test(run_name: str, best_config: dict, best_checkpoint=''):
+def run_test(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: dict):
     """
     Runs the test procedure.
     """
-    test_loader = load_data(best_config, 'test')
+    print('Starting Test')
+    time_run = conf['time_run']
 
-    wandb.login()
-    wandb.init(project=PROJECT_NAME, group='test', config=best_config, name=run_name, force=True,
-               job_type='test', tags=run_name.split('_'), entity=ENTITY_NAME)
+    wandb.init(project=PROJECT_NAME, entity=ENTITY_NAME, config=conf,
+               tags=[alg.name, dataset.name, time_run, 'hyper'],
+               group=f'{alg.name} - {dataset.name} - hyper - test', name=time_run, job_type='hyper - test', reinit=True)
 
-    # ---- Test ---- #
-    if best_config['alg'].value == PopularItems or best_config['alg'].value == RandomItems:
-        train_loader = load_data(best_config, 'train')
-        alg = best_config['alg'].value.build_from_conf(best_config, train_loader.dataset)
+    test_loader = get_dataloader(conf, 'test')
+
+    if alg.value == PopularItems:
+        # Popular Items requires the popularity distribution over the items learned over the training data
+        alg = alg.value.build_from_conf(conf, TrainRecDataset(conf['dataset_path']))
     else:
-        alg = best_config['alg'].value.build_from_conf(best_config, test_loader.dataset)
-        if isinstance(alg, SGDBasedRecommenderAlgorithm):
-            best_checkpoint = os.path.join(best_checkpoint, 'best_model.pth')
-        else:
-            best_checkpoint = os.path.join(best_checkpoint, 'best_model.npz')
-        alg.load_model_from_path(best_checkpoint)
+        alg = alg.value.build_from_conf(conf, test_loader.dataset)
+
+    alg.load_model_from_path(conf['model_path'])
 
     metrics_values = evaluate_recommender_algorithm(alg, test_loader)
-
     wandb.log(metrics_values)
-
     wandb.finish()
 
     return metrics_values
 
 
-def start_hyper(alg: RecAlgorithmsEnum, dataset: RecDatasetsEnum, seed: int = SINGLE_SEED, **kwargs) -> dict:
+def start_hyper(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union[str, dict], **kwargs):
     print('Starting Hyperparameter Optimization')
-    print(f'Dataset is {dataset.name} - Seed is {seed}')
+    print(f'Algorithm is {alg.name} - Dataset is {dataset.name}')
 
-    # ---- Algorithm's parameters and hyperparameters ---- #
-    conf = alg_param[alg.name]
-    conf['alg'] = alg
+    # ------ Run train and Val ------ #
+    best_config, best_checkpoint = run_train_val(alg, dataset, conf, **kwargs)
+    # ------ Run test ------ #
+    metric_values = run_test(alg, dataset, best_config)
 
-    # Dataset
-    conf['data_path'] = os.path.join(os.getcwd(), DATA_PATH, dataset.name)
-
-    # Seed
-    conf['seed'] = seed
-
-    # Experiment Settings
-    conf['experiment_settings'] = kwargs
-
-    run_name = f'{alg.name}_{dataset.name}_{seed}'
-
-    # ---- Train/Validation ---- #
-
-    if alg.value == PopularItems or alg.value == RandomItems:
-        # Skipping training and validation for naive algorithms
-        best_config, best_checkpoint = conf, ''
-    else:
-        print('Start Train/Val')
-        best_config, best_checkpoint = run_train_val(conf, run_name)
-
-    print('Start Test')
-    metric_values = run_test(run_name, best_config, best_checkpoint)
-
-    print('End')
     return metric_values
-
-
-def start_multiple_hyper(alg: RecAlgorithmsEnum, dataset: RecDatasetsEnum, **kwargs):
-    print('Starting Multi-Hyperparameter Optimization')
-    print(f'Dataset is {dataset.name} - Seeds are {SEED_LIST}')
-
-    run_name = f'{alg.name}_{dataset.name}'
-
-    # Checking whether we already run the experiments
-    wapi = wandb.Api()
-    multi_dataset_runs = wapi.runs(f'{ENTITY_NAME}/{PROJECT_NAME}', filters={'group': 'aggr_results'})
-    multi_dataset_runs_names = set([x.name for x in multi_dataset_runs])
-    if run_name in multi_dataset_runs_names:
-        print(f'\n\n\n'
-              f'Dataset <<{dataset.name}>> skipped since results are already available'
-              f'\n\n\n')
-        return
-
-    # Checking whether we already partially run the experiments
-    multi_hyper_runs = wapi.runs(f'{ENTITY_NAME}/{PROJECT_NAME}', filters={'group': 'test'})
-    multi_hyper_runs_names = set([x.name for x in multi_hyper_runs])
-
-    # Accumulate the results in a dictionary: e.g. results_list['ndcg@10'] = [0.8,0.5,0.3]
-    results_dict = defaultdict(list)
-
-    # Carry out the experiment
-    for seed in SEED_LIST:
-        sub_run_name = f'{alg.name}_{dataset.name}_{seed}'
-        if sub_run_name in multi_hyper_runs_names:
-            print(f'\n\n\n'
-                  f'Dataset <<{dataset.name}>> and seed <<{seed}>> skipped since results are already available'
-                  f'\n\n\n')
-            run = [x for x in multi_hyper_runs if x.name == sub_run_name][0]
-            metric_values = {k: v for k, v in run.summary.items() if k[0] != '_'}
-        else:
-            metric_values = start_hyper(alg, dataset, seed, **kwargs)
-        for key in metric_values:
-            results_dict[key].append(metric_values[key])
-
-    # Having collected all the values, carry out mean and std
-    aggr_results_dict = defaultdict(lambda x: 0)
-    for key, values_list in results_dict.items():
-        aggr_results_dict[f'{key} mu'] = np.mean(values_list)
-        aggr_results_dict[f'{key} sig'] = np.std(values_list)
-
-    # Log results
-    with open(WANDB_API_KEY_PATH) as wandb_file:
-        wandb_api_key = wandb_file.read()
-
-    wandb.login(key=wandb_api_key)
-    wandb.init(project=PROJECT_NAME, group='aggr_results', name=run_name, force=True, job_type='test',
-               tags=run_name.split('_'))
-
-    wandb.log(aggr_results_dict)
-    wandb.finish()
-
-
-def start_multi_dataset(alg: RecAlgorithmsEnum, **kwargs):
-    print('Starting Multi-dataset Multi-Hyperparameter Optimization')
-
-    # Checking whether we already run the experiments
-    wapi = wandb.Api()
-    multi_dataset_runs = wapi.runs(f'{ENTITY_NAME}/{PROJECT_NAME}', filters={'group': 'aggr_results'})
-    multi_dataset_runs_names = set([x.name for x in multi_dataset_runs])
-
-    for dataset in RecDatasetsEnum:
-        run_name = f'{alg.name}_{dataset.name}'
-        if run_name in multi_dataset_runs_names:
-            print(f'\n\n\n'
-                  f'Dataset <<{dataset.name}>> skipped since results are already available'
-                  f'\n\n\n')
-        else:
-            start_multiple_hyper(alg, dataset, **kwargs)
