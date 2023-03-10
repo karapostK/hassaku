@@ -67,7 +67,7 @@ def compute_jaccard_sim_mtx(matrix, sub_mtx, shrinkage, step, block_size):
     sub_mtx = sp.coo_matrix(sub_mtx @ matrix.T)
 
     shrink_factors = sub_mtx.data / (sub_mtx.data + shrinkage)
-    sub_mtx.data /= (counts[sub_mtx.row + (step * block_size)] + counts[
+    sub_mtx.data = sub_mtx.data / (counts[sub_mtx.row + (step * block_size)] + counts[
         sub_mtx.col] - sub_mtx.data)
     sub_mtx.data *= shrink_factors
 
@@ -92,7 +92,7 @@ def compute_asymmetric_cosine_sim_mtx(alpha, matrix, sub_mtx, shrinkage, step, b
 
     sub_mtx = sp.coo_matrix(sub_mtx @ matrix.T)
     shrink_factors = sub_mtx.data / (sub_mtx.data + shrinkage)
-    sub_mtx.data /= (
+    sub_mtx.data = sub_mtx.data / (
             sums_alpha[sub_mtx.row + (step * block_size)] * sums_1_min_alpha[sub_mtx.col])
     sub_mtx.data *= shrink_factors
     return sp.csr_matrix(sub_mtx)
@@ -103,7 +103,7 @@ def compute_sorensen_dice_sim_mtx(matrix, sub_mtx, shrinkage, step, block_size):
 
     sub_mtx = sp.coo_matrix(sub_mtx @ matrix.T)
     shrink_factors = sub_mtx.data / (sub_mtx.data + shrinkage)
-    sub_mtx.data /= (counts[sub_mtx.row + (step * block_size)] + counts[sub_mtx.col])
+    sub_mtx.data = sub_mtx.data / (counts[sub_mtx.row + (step * block_size)] + counts[sub_mtx.col])
     sub_mtx.data *= 2
     sub_mtx.data *= shrink_factors
     return sp.csr_matrix(sub_mtx)
@@ -114,8 +114,9 @@ def compute_tversky_sim_mtx(alpha, beta, matrix, sub_mtx, shrinkage, step, block
 
     sub_mtx = sp.coo_matrix(sub_mtx @ matrix.T)
     shrink_factors = sub_mtx.data / (sub_mtx.data + shrinkage)
-    sub_mtx.data /= (sub_mtx.data + alpha * (counts[sub_mtx.row + (step * block_size)] - sub_mtx.data) + beta * (
-            counts[sub_mtx.col] - sub_mtx.data))
+    sub_mtx.data = sub_mtx.data / (
+                sub_mtx.data + alpha * (counts[sub_mtx.row + (step * block_size)] - sub_mtx.data) + beta * (
+                counts[sub_mtx.col] - sub_mtx.data))
     sub_mtx.data *= shrink_factors
     return sp.csr_matrix(sub_mtx)
 

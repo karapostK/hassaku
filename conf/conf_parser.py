@@ -56,15 +56,24 @@ def parse_conf(conf: dict, alg: AlgorithmsEnum, dataset: DatasetsEnum) -> dict:
     conf['data_path'] = conf['data_path']
     conf['dataset_path'] = os.path.join(conf['data_path'], conf['dataset'], 'processed_dataset')
 
+    # Whether we are running hyperparameter optimization
+    use_tune = '_in_tune' in conf and conf['_in_tune']
+
     # Adding default parameters
     added_parameters_list = []
 
-    if 'model_save_path' not in conf:
-        conf['model_save_path'] = DEF_MODEL_SAVE_PATH
-        added_parameters_list.append(f"model_save_path={conf['model_save_path']}")
+    if not use_tune:
+        if 'model_save_path' not in conf:
+            conf['model_save_path'] = DEF_MODEL_SAVE_PATH
+            added_parameters_list.append(f"model_save_path={conf['model_save_path']}")
 
-    conf['model_path'] = os.path.join(conf['model_save_path'], "{}-{}".format(alg.name, dataset.name), conf['time_run'])
-    os.makedirs(conf['model_path'], exist_ok=True)
+        conf['model_path'] = os.path.join(conf['model_save_path'], "{}-{}".format(alg.name, dataset.name),
+                                          conf['time_run'])
+        os.makedirs(conf['model_path'], exist_ok=True)
+
+    if 'optimizing_metric' not in conf:
+        conf['optimizing_metric'] = DEF_OPTIMIZING_METRIC
+        added_parameters_list.append(f"optimizing_metric={conf['optimizing_metric']}")
 
     if 'running_settings' not in conf:
         conf['running_settings'] = dict()
@@ -138,10 +147,6 @@ def parse_conf(conf: dict, alg: AlgorithmsEnum, dataset: DatasetsEnum) -> dict:
         else:
             assert conf['device'] in ['cpu',
                                       'cuda'], f"Device ({conf['device']}) not available"
-
-        if 'optimizing_metric' not in conf:
-            conf['optimizing_metric'] = DEF_OPTIMIZING_METRIC
-            added_parameters_list.append(f"optimizing_metric={conf['optimizing_metric']}")
 
         if 'max_patience' not in conf:
             conf['max_patience'] = conf['n_epochs'] - 1

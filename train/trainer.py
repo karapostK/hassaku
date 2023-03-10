@@ -1,5 +1,6 @@
 import torch
 import wandb
+from ray.air import session
 from torch import nn
 from torch.utils import data
 from tqdm import trange, tqdm
@@ -52,8 +53,11 @@ class Trainer:
 
         self.model_path = conf['model_path']
 
-        self.use_wandb = conf['running_settings']['use_wandb']
-        self.batch_verbose = conf['running_settings']['batch_verbose']
+        running_settings = conf['running_settings']
+        self.use_wandb = running_settings['use_wandb']
+        self.batch_verbose = running_settings['batch_verbose']
+
+        self._in_tune = conf['_in_tune'] if '_in_tune' in conf else False
 
         self.best_value = None
         self.best_metrics = None
@@ -80,12 +84,17 @@ class Trainer:
         current_patience = self.max_patience
 
         metrics_values = self.val()
+
+        self.best_value = metrics_values['max_optimizing_metric'] = metrics_values[self.optimizing_metric]
         self.best_metrics = metrics_values
-        self.best_value = metrics_values[self.optimizing_metric]
+
         print('Init - Avg Val Value {:.3f} \n'.format(self.best_value))
 
-        if self.use_wandb:
+        if self.use_wandb and not self._in_tune:
             wandb.log(metrics_values)
+
+        if self._in_tune:
+            session.report(metrics_values)
 
         self.pointer_to_model.save_model_to_path(self.model_path)
 
@@ -134,21 +143,25 @@ class Trainer:
             metrics_values = self.val()
             curr_value = metrics_values[self.optimizing_metric]
             print('Epoch {} - Avg Val Value {:.3f} \n'.format(epoch, curr_value))
-            if self.use_wandb:
-                wandb.log({**metrics_values,
-                           'epoch_train_loss': epoch_train_loss,
-                           'epoch_train_rec_loss': epoch_train_rec_loss,
-                           'epoch_train_reg_loss': epoch_train_reg_loss})
 
             if curr_value > self.best_value:
-                self.best_value = curr_value
+                self.best_value = metrics_values['max_optimizing_metric'] = curr_value
                 self.best_metrics = metrics_values
+
                 print('Epoch {} - New best model found (val value {:.3f}) \n'.format(epoch, curr_value))
                 self.pointer_to_model.save_model_to_path(self.model_path)
 
                 current_patience = self.max_patience  # Reset patience
             else:
                 current_patience -= 1
+
+            if self.use_wandb and not self._in_tune:
+                wandb.log({**metrics_values,
+                           'epoch_train_loss': epoch_train_loss,
+                           'epoch_train_rec_loss': epoch_train_rec_loss,
+                           'epoch_train_reg_loss': epoch_train_reg_loss})
+            if self._in_tune:
+                session.report(metrics_values)
 
         return self.best_metrics
 
