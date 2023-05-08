@@ -153,6 +153,7 @@ class Trainer:
 
                 current_patience = self.max_patience  # Reset patience
             else:
+                metrics_values['max_optimizing_metric'] = self.best_value
                 current_patience -= 1
 
             if self.use_wandb and not self._in_tune:

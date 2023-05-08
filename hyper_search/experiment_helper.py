@@ -16,6 +16,7 @@ from data.data_utils import DatasetsEnum, get_dataloader
 from data.dataset import TrainRecDataset
 from eval.eval import evaluate_recommender_algorithm
 from hyper_search.hyper_params import alg_param
+from hyper_search.utils import KeepOnlyTopModels
 from train.trainer import Trainer
 from utilities.utils import generate_id, reproducible
 from wandb_conf import PROJECT_NAME, ENTITY_NAME, WANDB_API_KEY_PATH
@@ -40,7 +41,6 @@ def tune_training(conf: dict):
         # Validation happens within the Trainer
         trainer = Trainer(alg, train_loader, val_loader, conf)
         metrics_values = trainer.fit()
-
 
     elif issubclass(alg.value, SparseMatrixBasedRecommenderAlgorithm):
         train_dataset = TrainRecDataset(conf['dataset_path'])
@@ -106,7 +106,7 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union
                                        entity=ENTITY_NAME, group=f'{alg.name} - {dataset.name} - hyper - train/val')
 
     # Saving the models only for the best n_tops models.
-    # keep_callback = KeepOnlyTopTrials(optimizing_metric, n_tops=3)
+    keep_callback = KeepOnlyTopModels(optimizing_metric, n_tops=3)
 
     # Other experiment's settings
     hyperparameter_settings = conf['hyperparameter_settings']
@@ -125,16 +125,18 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union
     run_config = air.RunConfig(
         local_dir=f'./hyper_saved_models/{alg.name}-{dataset.name}',
         name=time_run,
-        callbacks=[log_callback],
+        callbacks=[log_callback, keep_callback],
         failure_config=air.FailureConfig(fail_fast=True)
     )
 
     # Setting up the resources per trial
     if hyperparameter_settings['n_gpus'] > 0:
         tune_training_with_resources = tune.with_resources(tune_training,
-                                                           {'gpu': hyperparameter_settings['n_gpus']})
+                                                           {'gpu': hyperparameter_settings['n_gpus'],
+                                                            'cpu': hyperparameter_settings['n_cpus']})
     else:
-        tune_training_with_resources = tune_training
+        tune_training_with_resources = tune.with_resources(tune_training,
+                                                           {'cpu': hyperparameter_settings['n_cpus']})
 
     tuner = tune.Tuner(tune_training_with_resources,
                        param_space=conf,

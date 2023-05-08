@@ -7,10 +7,12 @@ from ray.tune import Callback
 from ray.tune.experiment.trial import Trial
 
 
-class KeepOnlyTopTrials(Callback):
+class KeepOnlyTopModels(Callback):
     """
-    Callback class used to keep only the trials with the highest results.
+    Callback class used to delete the models of the trials that are not in the top-n highest results.
     If the trial becomes part of the top-n, it deletes the model with the current smallest metric value among the top-n.
+    This allows to keep the storage requirement low (e.g. 260 GB vs 16 GB for top-3 on ml10m)
+    NB: In order to work properly, the file name should be something like "model" (e.g. model.npz or model.pth)
     """
 
     def __init__(self, metric_name: str, n_tops: int = 3):
@@ -23,7 +25,6 @@ class KeepOnlyTopTrials(Callback):
 
         self._top_maxs: List[float] = [-np.inf] * n_tops
         self._top_paths: List[str] = [''] * n_tops
-        self._top_confs: List[dict] = [{}] * n_tops
 
     def on_trial_result(self, iteration: int, trials: List["Trial"],
                         trial: "Trial", result: Dict, **info):
@@ -50,11 +51,10 @@ class KeepOnlyTopTrials(Callback):
             old_trial_path = self._top_paths[argmin]
             self._top_maxs[argmin] = trial_max
             self._top_paths[argmin] = trial.logdir
-            self._top_confs[argmin] = trial.config
 
             # Remove the previous-best
-            # N.B. The framework assumes that there is only a single checkpoint!
-            old_trial_checkpoint = os.path.join(old_trial_path, 'checkpoint_000000/best*')
+            # N.B. The class assumes that the model is stored in a model file!
+            old_trial_checkpoint = os.path.join(old_trial_path, 'model.*')
             checkpoint_lists = glob.glob(old_trial_checkpoint)
             for checkpoint_file in checkpoint_lists:
                 os.remove(checkpoint_file)
@@ -62,7 +62,7 @@ class KeepOnlyTopTrials(Callback):
         else:
             print(f'Trial {trial.trial_id} did not become one of the top trials')
             # Delete self checkpoint
-            trial_checkpoint = os.path.join(trial.logdir, 'checkpoint_000000/best*')
+            trial_checkpoint = os.path.join(trial.logdir, 'model.*')
             checkpoint_lists = glob.glob(trial_checkpoint)
             for checkpoint_file in checkpoint_lists:
                 os.remove(checkpoint_file)
@@ -75,17 +75,6 @@ class KeepOnlyTopTrials(Callback):
         argmax = np.argmax(self._top_maxs)
 
         best_value = self._top_maxs[argmax]
-        best_path = os.path.join(self._top_paths[argmax], 'checkpoint_000000')
-        best_conf = self._top_confs[argmax]
+        best_path = self._top_paths[argmax]
 
-        return best_value, best_path, best_conf
-
-    def log_bests(self, path_to_file: str):
-        """
-        Logs the values, paths, and confs of the best trials
-        """
-
-        np.savez(os.path.join(path_to_file, 'top_runs.npz'),
-                 top_maxs=self._top_maxs,
-                 top_paths=[os.path.join(x, 'checkpoint_000000') for x in self._top_paths],
-                 top_confs=self._top_confs)
+        return best_value, best_path
