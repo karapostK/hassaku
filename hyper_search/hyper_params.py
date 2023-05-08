@@ -31,10 +31,25 @@ knn_hyper_param = {
 }
 
 mf_hyper_param = {
-    'embedding_dim': tune.randint(10, 30)
+    'embedding_dim': tune.randint(10, 100),
+    'lr': tune.loguniform(1e-4, 1e-2),
+    'wd': tune.loguniform(1e-6, 1e-2),
+    'train_batch_size': tune.lograndint(32, 4028, base=2),
+    'rec_loss': tune.choice(['bce', 'bpr', 'sampled_softmax']),
+}
+
+bias_hyper_param = {
+    'lr': tune.loguniform(1e-4, 1e-1),
+    'wd': tune.loguniform(1e-6, 1e-1),
+    'train_batch_size': tune.lograndint(32, 4028, base=2),
+    'rec_loss': tune.choice(['bce', 'bpr', 'sampled_softmax']),
+    'neg_train': tune.randint(1, 100),
+    'train_neg_strategy': tune.choice(['uniform', 'popular'])
+
 }
 alg_param = {
     AlgorithmsEnum.uknn: knn_hyper_param,
     AlgorithmsEnum.iknn: knn_hyper_param,
-    AlgorithmsEnum.mf: mf_hyper_param
+    AlgorithmsEnum.mf: mf_hyper_param,
+    AlgorithmsEnum.sgdbias: bias_hyper_param
 }
