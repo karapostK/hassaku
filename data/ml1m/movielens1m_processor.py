@@ -27,6 +27,7 @@ if os.path.exists('./processed_dataset'):
 os.mkdir('./processed_dataset')
 
 ratings_path = './raw_dataset/ratings.dat'
+user_info_path = './raw_dataset/users.dat'
 log_filt_data_file = open(os.path.join('./processed_dataset', LOG_FILT_DATA_PATH), 'w+')
 
 lhs = pd.read_csv(ratings_path, sep='::', names=['user', 'item', 'rating', 'timestamp'], engine='python')
@@ -55,6 +56,11 @@ print_and_log(log_filt_data_file, len(val_data), val_data.user.nunique(), val_da
 print_and_log(log_filt_data_file, len(test_data), test_data.user.nunique(), test_data.item.nunique(), 'Test Data')
 
 log_filt_data_file.close()
+
+# Adding grouping information
+users = pd.read_csv(user_info_path, sep='::', usecols=[0, 1], names=['user', 'gender'], engine='python')
+user_idxs = user_idxs.merge(users)
+user_idxs['group_idx'] = (user_idxs.gender == 'F').astype(int)  # 0 is Male 1 is Female
 
 # Saving locally
 print('Saving data to ./processed_dataset')

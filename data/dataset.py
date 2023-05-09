@@ -2,6 +2,7 @@ import os
 
 import numpy as np
 import pandas as pd
+import torch
 from scipy import sparse as sp
 from torch.utils import data
 
@@ -37,6 +38,9 @@ class RecDataset(data.Dataset):
         self.n_users = None
         self.n_items = None
 
+        self.user_to_user_group = None  # optional
+        self.n_user_groups = 0  # optional
+
         self.lhs = None
 
         self._load_data()
@@ -47,7 +51,8 @@ class RecDataset(data.Dataset):
               f'- split_set: {self.split_set} \n'
               f'- n_users: {self.n_users} \n'
               f'- n_items: {self.n_items} \n'
-              f'- n_interactions: {len(self.lhs)} \n')
+              f'- n_interactions: {len(self.lhs)} \n'
+              f'- n_user_groups: {self.n_user_groups} \n')
 
     def _load_data(self):
         print('Loading data')
@@ -58,6 +63,12 @@ class RecDataset(data.Dataset):
         self.n_users = len(user_idxs)
         self.n_items = len(item_idxs)
 
+        # Optional grouping of the users
+        if 'group_idx' in user_idxs.columns:
+            self.user_to_user_group = user_idxs[['user_idx', 'group_idx']].set_index('user_idx').sort_index().group_idx
+            self.user_to_user_group = torch.Tensor(self.user_to_user_group)
+
+            self.n_user_groups = user_idxs.group_idx.nunique()
         self.lhs = self._load_lhs(self.split_set)
 
         print('End loading data')

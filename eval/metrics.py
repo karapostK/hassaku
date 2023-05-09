@@ -33,7 +33,7 @@ def recall_at_k_batch(logits: torch.Tensor, y_true: torch.Tensor, k: int = 10, a
     if aggr_sum:
         return recall.sum()
     else:
-        return list(recall)
+        return recall
 
 
 def precision_at_k_batch(logits: torch.Tensor, y_true: torch.Tensor, k: int = 10, aggr_sum: bool = True,
@@ -64,7 +64,7 @@ def precision_at_k_batch(logits: torch.Tensor, y_true: torch.Tensor, k: int = 10
     if aggr_sum:
         return precision.sum()
     else:
-        return list(precision)
+        return precision
 
 
 def ndcg_at_k_batch(logits: torch.Tensor, y_true: torch.Tensor, k: int = 10, aggr_sum: bool = True,
@@ -102,4 +102,4 @@ def ndcg_at_k_batch(logits: torch.Tensor, y_true: torch.Tensor, k: int = 10, agg
     if aggr_sum:
         return NDCG.sum()
     else:
-        return list(NDCG)
+        return NDCG

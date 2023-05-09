@@ -71,6 +71,10 @@ print_and_log(log_filt_data_file, len(test_data), test_data.user.nunique(), test
 
 log_filt_data_file.close()
 
+# Adding grouping information
+user_idxs = user_idxs.merge(users)
+user_idxs['group_idx'] = (user_idxs.gender == 'f').astype(int)  # 0 is Male 1 is Female
+
 # Saving locally
 print('Saving data to ./processed_dataset')
 
