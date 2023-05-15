@@ -44,6 +44,8 @@ class Trainer:
             self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=self.wd)
         elif conf['optimizer'] == 'adagrad':
             self.optimizer = torch.optim.Adagrad(self.model.parameters(), lr=self.lr, weight_decay=self.wd)
+        elif conf['optimizer'] == 'adamw':
+            self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr, weight_decay=self.wd)
         else:
             raise ValueError(f"Optimizer {conf['optimizer']} not yet implemented")
 

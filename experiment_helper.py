@@ -98,7 +98,7 @@ def run_test(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union[str,
 
     metrics_values = evaluate_recommender_algorithm(alg, test_loader)
     if conf['running_settings']['use_wandb']:
-        wandb.log(metrics_values)
+        wandb.log(metrics_values, step=0)
         wandb.finish()
 
 

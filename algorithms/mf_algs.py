@@ -80,7 +80,7 @@ class AlternatingLeastSquare(SparseMatrixBasedRecommenderAlgorithm):
         '''
 
         self.alpha = alpha
-        self.factors = factors * 32
+        self.factors = factors #* 32
         self.regularization = regularization
         self.n_iterations = n_iterations
         self.use_gpu = use_gpu
