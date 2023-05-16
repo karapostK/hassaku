@@ -14,7 +14,7 @@ parser.add_argument('--dataset', '-d', type=str, help='Recommender Systems Datas
 parser.add_argument('--conf_path', '-c', type=str,
                     help='Path to the .yml containing the configuration of the experiment.'
                          'NB. These values will be overridden by the hyper-parameter configuration.')
-parser.add_argument('--n_samples', '-ns', type=int, default=100, required=False,
+parser.add_argument('--n_samples', '-ns', type=int, default=50, required=False,
                     help='Number of hyperparameters configurations to sample')
 parser.add_argument('--n_gpus', '-ng', type=float, default=0.2, required=False,
                     help='Number of gpus per trial (<= 1 values are possible)')

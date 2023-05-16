@@ -1,3 +1,4 @@
+import json
 import os.path
 
 import yaml
@@ -27,11 +28,16 @@ DEF_OPTIMIZING_METRIC = 'ndcg@10'
 DEF_BATCH_VERBOSE = False
 
 
-def parse_yaml(conf_path: str) -> dict:
+def parse_conf_file(conf_path: str) -> dict:
     assert os.path.isfile(conf_path), f'Configuration File {conf_path} not found!'
 
     with open(conf_path, 'r') as conf_file:
-        conf = yaml.safe_load(conf_file)
+        try:
+            print('Reading file as Yaml...')
+            conf = yaml.safe_load(conf_file)
+        except:
+            print('Reading file as Json...')
+            conf = json.load(conf_file)
     print(' --- Configuration Loaded ---')
     return conf
 

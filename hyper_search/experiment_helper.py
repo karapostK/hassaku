@@ -11,7 +11,7 @@ from ray.tune.search.hyperopt import HyperOptSearch
 from algorithms.algorithms_utils import AlgorithmsEnum
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm, SparseMatrixBasedRecommenderAlgorithm
 from algorithms.naive_algs import PopularItems
-from conf.conf_parser import parse_yaml, parse_conf
+from conf.conf_parser import parse_conf_file, parse_conf
 from data.data_utils import DatasetsEnum, get_dataloader
 from data.dataset import TrainRecDataset
 from eval.eval import evaluate_recommender_algorithm
@@ -83,7 +83,7 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union
     print('Starting Train and Val')
     # Reading fixed parameters (NB. some parameters might be overridden by the hyperparameters)
     if isinstance(conf, str):
-        conf = parse_yaml(conf)
+        conf = parse_conf_file(conf)
 
     conf['_in_tune'] = True
     conf = parse_conf(conf, alg, dataset)

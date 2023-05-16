@@ -106,7 +106,6 @@ class AlternatingLeastSquare(SparseMatrixBasedRecommenderAlgorithm):
                                                    iterations=self.n_iterations,
                                                    use_gpu=self.use_gpu,
                                                    num_threads=10)
-        print(self.alpha)
         als.fit(self.alpha * matrix)
 
         self.items_factors = als.item_factors

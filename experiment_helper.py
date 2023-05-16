@@ -4,7 +4,7 @@ import wandb
 from algorithms.algorithms_utils import AlgorithmsEnum
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm, SparseMatrixBasedRecommenderAlgorithm
 from algorithms.naive_algs import PopularItems
-from conf.conf_parser import parse_yaml, parse_conf, save_yaml
+from conf.conf_parser import parse_conf_file, parse_conf, save_yaml
 from data.data_utils import DatasetsEnum, get_dataloader
 from data.dataset import TrainRecDataset
 from eval.eval import evaluate_recommender_algorithm
@@ -18,7 +18,7 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union
     print(f'Algorithm is {alg.name} - Dataset is {dataset.name}')
 
     if isinstance(conf, str):
-        conf = parse_yaml(conf)
+        conf = parse_conf_file(conf)
     conf = parse_conf(conf, alg, dataset)
 
     if conf['running_settings']['use_wandb']:
@@ -80,7 +80,7 @@ def run_test(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union[str,
     print(f'Algorithm is {alg.name} - Dataset is {dataset.name}')
 
     if isinstance(conf, str):
-        conf = parse_yaml(conf)
+        conf = parse_conf_file(conf)
 
     if conf['running_settings']['use_wandb']:
         wandb.init(project=PROJECT_NAME, entity=ENTITY_NAME, config=conf, tags=[alg.name, dataset.name],
