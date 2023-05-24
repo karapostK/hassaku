@@ -1,9 +1,10 @@
+import logging
 from typing import Union, Tuple
 
 import torch
 from torch import nn
-from torch.utils import data
 from torch.nn import functional as F
+from torch.utils import data
 
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm
 from train.utils import general_weight_init
@@ -29,7 +30,7 @@ class SGDBaseline(SGDBasedRecommenderAlgorithm):
 
         self.name = 'SGDBaseline'
 
-        print(f'Built {self.name} module\n')
+        logging.info(f'Built {self.name} module\n')
 
     def get_user_representations(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
         return self.user_bias(u_idxs)
@@ -79,11 +80,11 @@ class SGDMatrixFactorization(SGDBasedRecommenderAlgorithm):
 
         self.name = 'SGDMatrixFactorization'
 
-        print(f'Built {self.name} module\n'
-              f'- embedding_dim: {self.embedding_dim} \n'
-              f'- use_user_bias: {self.use_user_bias} \n'
-              f'- use_item_bias: {self.use_item_bias} \n'
-              f'- use_global_bias: {self.use_global_bias}')
+        logging.info(f'Built {self.name} module\n'
+                     f'- embedding_dim: {self.embedding_dim} \n'
+                     f'- use_user_bias: {self.use_user_bias} \n'
+                     f'- use_item_bias: {self.use_item_bias} \n'
+                     f'- use_global_bias: {self.use_global_bias}')
 
     def get_user_representations(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
         if self.use_user_bias:
@@ -154,13 +155,13 @@ class ACF(SGDBasedRecommenderAlgorithm):
 
         self.name = 'ACF'
 
-        print(f'Built {self.name} model \n'
-              f'- n_users: {self.n_users} \n'
-              f'- n_items: {self.n_items} \n'
-              f'- embedding_dim: {self.embedding_dim} \n'
-              f'- n_anchors: {self.n_anchors} \n'
-              f'- delta_exc: {self.delta_exc} \n'
-              f'- delta_inc: {self.delta_inc} \n')
+        logging.info(f'Built {self.name} model \n'
+                     f'- n_users: {self.n_users} \n'
+                     f'- n_items: {self.n_items} \n'
+                     f'- embedding_dim: {self.embedding_dim} \n'
+                     f'- n_anchors: {self.n_anchors} \n'
+                     f'- delta_exc: {self.delta_exc} \n'
+                     f'- delta_inc: {self.delta_inc} \n')
 
     def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
         u_repr = self.get_user_representations(u_idxs)
@@ -248,7 +249,8 @@ class UProtoMF(SGDBasedRecommenderAlgorithm):
         self.user_embed = nn.Embedding(self.n_users, self.embedding_dim)
         self.item_embed = nn.Embedding(self.n_items, self.n_prototypes)
 
-        self.prototypes = nn.Parameter(torch.randn([self.n_prototypes, self.embedding_dim]), requires_grad=True)
+        self.prototypes = nn.Parameter(torch.randn([self.n_prototypes, self.embedding_dim]) * 1. / self.embedding_dim,
+                                       requires_grad=True)
 
         self.user_embed.apply(general_weight_init)
         self.item_embed.apply(general_weight_init)
@@ -258,13 +260,13 @@ class UProtoMF(SGDBasedRecommenderAlgorithm):
 
         self.name = 'UProtoMF'
 
-        print(f'Built {self.name} model \n'
-              f'- n_users: {self.n_users} \n'
-              f'- n_items: {self.n_items} \n'
-              f'- embedding_dim: {self.embedding_dim} \n'
-              f'- n_prototypes: {self.n_prototypes} \n'
-              f'- sim_proto_weight: {self.sim_proto_weight} \n'
-              f'- sim_batch_weight: {self.sim_batch_weight} \n')
+        logging.info(f'Built {self.name} model \n'
+                     f'- n_users: {self.n_users} \n'
+                     f'- n_items: {self.n_items} \n'
+                     f'- embedding_dim: {self.embedding_dim} \n'
+                     f'- n_prototypes: {self.n_prototypes} \n'
+                     f'- sim_proto_weight: {self.sim_proto_weight} \n'
+                     f'- sim_batch_weight: {self.sim_batch_weight} \n')
 
     def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
         u_repr = self.get_user_representations(u_idxs)
@@ -334,13 +336,13 @@ class IProtoMF(SGDBasedRecommenderAlgorithm):
 
         self.name = 'IProtoMF'
 
-        print(f'Built {self.name} model \n'
-              f'- n_users: {self.n_users} \n'
-              f'- n_items: {self.n_items} \n'
-              f'- embedding_dim: {self.embedding_dim} \n'
-              f'- n_prototypes: {self.n_prototypes} \n'
-              f'- sim_proto_weight: {self.sim_proto_weight} \n'
-              f'- sim_batch_weight: {self.sim_batch_weight} \n')
+        logging.info(f'Built {self.name} model \n'
+                     f'- n_users: {self.n_users} \n'
+                     f'- n_items: {self.n_items} \n'
+                     f'- embedding_dim: {self.embedding_dim} \n'
+                     f'- n_prototypes: {self.n_prototypes} \n'
+                     f'- sim_proto_weight: {self.sim_proto_weight} \n'
+                     f'- sim_batch_weight: {self.sim_batch_weight} \n')
 
     def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
         u_repr = self.get_user_representations(u_idxs)
@@ -426,7 +428,7 @@ class UIProtoMF(SGDBasedRecommenderAlgorithm):
 
         self.name = 'UIProtoMF'
 
-        print(f'Built {self.name} model \n')
+        logging.info(f'Built {self.name} model \n')
 
     def get_user_representations(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
         u_sim_mtx = self.uprotomf.get_user_representations(u_idxs)

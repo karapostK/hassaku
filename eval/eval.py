@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm, RecommenderAlgorithm
 from eval.eval_utils import K_VALUES
 from eval.metrics import precision_at_k_batch, ndcg_at_k_batch, recall_at_k_batch
-from utilities.utils import print_results
+from utilities.utils import log_info_results
 
 
 class FullEvaluator:
@@ -133,5 +133,5 @@ def evaluate_recommender_algorithm(alg: RecommenderAlgorithm, eval_loader: DataL
 
     metrics_values = evaluator.get_results()
 
-    print_results(metrics_values)
+    log_info_results(metrics_values)
     return metrics_values

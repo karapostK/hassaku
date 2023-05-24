@@ -1,4 +1,5 @@
 import functools
+import logging
 import random
 from datetime import datetime
 
@@ -25,9 +26,9 @@ def reproducible(seed: int):
     torch.backends.cudnn.benchmark = False
 
 
-def print_results(metrics):
+def log_info_results(metrics):
     """
-    Prints the results on the command line.
+    Logs the results using logging
 
     :param metrics: dict containing the metrics to print.
     :return:
@@ -36,7 +37,7 @@ def print_results(metrics):
     STR_RESULT = "{:10} : {:.3f}"
 
     for metric_name, metric_value in metrics.items():
-        print(STR_RESULT.format(metric_name, metric_value))
+        logging.info(STR_RESULT.format(metric_name, metric_value))
 
 
 class FunctionWrapper:

@@ -1,5 +1,6 @@
 import bz2
 import enum
+import logging
 import math
 import os.path
 import zipfile
@@ -251,9 +252,9 @@ def get_dataloader(conf: dict, split_set: str) -> DataLoader:
             prefetch_factor=conf['running_settings']['prefetch_factor'] if 'prefetch_factor' in conf[
                 'running_settings'] else 2
         )
-        print(f"Built Train DataLoader module \n"
-              f"- batch_size: {conf['train_batch_size']} \n"
-              f"- n_workers: {conf['running_settings']['n_workers']} \n")
+        logging.info(f"Built Train DataLoader module \n"
+                     f"- batch_size: {conf['train_batch_size']} \n"
+                     f"- n_workers: {conf['running_settings']['n_workers']} \n")
 
     elif split_set == 'val':
         dataloader = DataLoader(
@@ -263,8 +264,8 @@ def get_dataloader(conf: dict, split_set: str) -> DataLoader:
             ),
             batch_size=conf['eval_batch_size']
         )
-        print(f"Built Val DataLoader module \n"
-              f"- batch_size: {conf['eval_batch_size']} \n")
+        logging.info(f"Built Val DataLoader module \n"
+                     f"- batch_size: {conf['eval_batch_size']} \n")
 
     elif split_set == 'test':
         dataloader = DataLoader(
@@ -274,8 +275,8 @@ def get_dataloader(conf: dict, split_set: str) -> DataLoader:
             ),
             batch_size=conf['eval_batch_size']
         )
-        print(f"Built Test DataLoader module \n"
-              f"- batch_size: {conf['eval_batch_size']} \n")
+        logging.info(f"Built Test DataLoader module \n"
+                     f"- batch_size: {conf['eval_batch_size']} \n")
     else:
         raise ValueError(f"split_set value '{split_set}' is invalid! Please choose from [train, val, test]")
     return dataloader

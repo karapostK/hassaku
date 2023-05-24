@@ -1,3 +1,4 @@
+import logging
 from typing import Optional, Sequence
 
 import numpy as np
@@ -41,10 +42,10 @@ class NegativeSampler:
 
         self.name = 'NegativeSampler'
 
-        print(f'Built {self.name} module \n'
-              f'- n_neg: {self.n_neg} \n'
-              f'- neg_sampling_strategy: {self.neg_sampling_strategy} \n'
-              f'- squashing_factor_pop_sampling: {self.squashing_factor_pop_sampling} \n')
+        logging.info(f'Built {self.name} module \n'
+                     f'- n_neg: {self.n_neg} \n'
+                     f'- neg_sampling_strategy: {self.neg_sampling_strategy} \n'
+                     f'- squashing_factor_pop_sampling: {self.squashing_factor_pop_sampling} \n')
 
     def _neg_sample_uniform(self, to_sample: int):
         return np.random.randint(0, high=self.n_items, size=to_sample)

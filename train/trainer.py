@@ -1,3 +1,5 @@
+import logging
+
 import torch
 import wandb
 from ray.air import session
@@ -64,19 +66,19 @@ class Trainer:
         self.best_value = None
         self.best_metrics = None
 
-        print(f'Built Trainer module \n'
-              f'- n_epochs: {self.n_epochs} \n'
-              f'- rec_loss: {self.rec_loss.__class__.__name__} \n'
-              f'- loss_aggregator: {self.rec_loss.aggregator} \n'
-              f'- device: {self.device} \n'
-              f'- optimizing_metric: {self.optimizing_metric} \n'
-              f'- model_path: {self.model_path} \n'
-              f'- optimizer: {self.optimizer.__class__.__name__} \n'
-              f'- lr: {self.lr} \n'
-              f'- wd: {self.wd} \n'
-              f'- use_wandb: {self.use_wandb} \n'
-              f'- batch_verbose: {self.batch_verbose} \n'
-              f'- max_patience: {self.max_patience} \n')
+        logging.info(f'Built Trainer module \n'
+                     f'- n_epochs: {self.n_epochs} \n'
+                     f'- rec_loss: {self.rec_loss.__class__.__name__} \n'
+                     f'- loss_aggregator: {self.rec_loss.aggregator} \n'
+                     f'- device: {self.device} \n'
+                     f'- optimizing_metric: {self.optimizing_metric} \n'
+                     f'- model_path: {self.model_path} \n'
+                     f'- optimizer: {self.optimizer.__class__.__name__} \n'
+                     f'- lr: {self.lr} \n'
+                     f'- wd: {self.wd} \n'
+                     f'- use_wandb: {self.use_wandb} \n'
+                     f'- batch_verbose: {self.batch_verbose} \n'
+                     f'- max_patience: {self.max_patience} \n')
 
     def fit(self):
         """

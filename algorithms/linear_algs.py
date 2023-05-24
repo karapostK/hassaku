@@ -1,4 +1,5 @@
 import itertools
+import logging
 import multiprocessing
 import os
 import warnings
@@ -30,10 +31,10 @@ class SLIM(SparseMatrixBasedRecommenderAlgorithm):
 
         self.name = 'SLIM'
 
-        print(f'Built {self.name} module \n'
-              f'- alpha: {self.alpha} \n'
-              f'- l1_ratio: {self.l1_ratio} \n'
-              f'- max_iter: {self.max_iter} \n')
+        logging.info(f'Built {self.name} module \n'
+                     f'- alpha: {self.alpha} \n'
+                     f'- l1_ratio: {self.l1_ratio} \n'
+                     f'- max_iter: {self.max_iter} \n')
 
     def fit(self, matrix: sp.spmatrix):
 
@@ -141,8 +142,8 @@ class EASE(SparseMatrixBasedRecommenderAlgorithm):
 
         self.name = 'EASE'
 
-        print(f'Built {self.name} module \n'
-              f'- lam: {self.lam} ')
+        logging.info(f'Built {self.name} module \n'
+                     f'- lam: {self.lam} ')
 
     def fit(self, matrix: sp.spmatrix):
         # Computer Gram matrix

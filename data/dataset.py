@@ -1,3 +1,4 @@
+import logging
 import os
 
 import numpy as np
@@ -46,16 +47,16 @@ class RecDataset(data.Dataset):
         self._load_data()
 
         self.name = "RecDataset"
-        print(f'Built {self.name} module \n'
-              f'- data_path: {self.data_path} \n'
-              f'- split_set: {self.split_set} \n'
-              f'- n_users: {self.n_users} \n'
-              f'- n_items: {self.n_items} \n'
-              f'- n_interactions: {len(self.lhs)} \n'
-              f'- n_user_groups: {self.n_user_groups} \n')
+        logging.info(f'Built {self.name} module \n'
+                     f'- data_path: {self.data_path} \n'
+                     f'- split_set: {self.split_set} \n'
+                     f'- n_users: {self.n_users} \n'
+                     f'- n_items: {self.n_items} \n'
+                     f'- n_interactions: {len(self.lhs)} \n'
+                     f'- n_user_groups: {self.n_user_groups} \n')
 
     def _load_data(self):
-        print('Loading data')
+        logging.info('Loading data')
 
         user_idxs = pd.read_csv(os.path.join(self.data_path, 'user_idxs.csv'))
         item_idxs = pd.read_csv(os.path.join(self.data_path, 'item_idxs.csv'))
@@ -71,7 +72,7 @@ class RecDataset(data.Dataset):
             self.n_user_groups = user_idxs.group_idx.nunique()
         self.lhs = self._load_lhs(self.split_set)
 
-        print('End loading data')
+        logging.info('End loading data')
 
     def _load_lhs(self, split_set: str):
         return pd.read_csv(os.path.join(self.data_path, f'listening_history_{split_set}.csv'))
@@ -113,8 +114,8 @@ class TrainRecDataset(RecDataset):
         self._prepare_data()
 
         self.name = 'TrainRecDataset'
-        print(f'Built {self.name} module \n'
-              f'- delete_lhs: {self.delete_lhs} \n')
+        logging.info(f'Built {self.name} module \n'
+                     f'- delete_lhs: {self.delete_lhs} \n')
 
     def _prepare_data(self):
         self.iteration_matrix = sp.coo_matrix(
@@ -167,8 +168,8 @@ class FullEvalDataset(RecDataset):
 
         self.name = 'FullEvalDataset'
 
-        print(f'Built {self.name} module \n'
-              f'- delete_lhs: {self.delete_lhs} \n')
+        logging.info(f'Built {self.name} module \n'
+                     f'- delete_lhs: {self.delete_lhs} \n')
 
     def _prepare_data(self):
         self.iteration_matrix = sp.csr_matrix(

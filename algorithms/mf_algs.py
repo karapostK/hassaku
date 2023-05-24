@@ -1,3 +1,4 @@
+import logging
 import os
 import typing
 
@@ -8,7 +9,7 @@ import torch
 from scipy import sparse as sp
 from scipy.sparse.linalg import svds
 
-from algorithms.base_classes import RecommenderAlgorithm, SparseMatrixBasedRecommenderAlgorithm
+from algorithms.base_classes import SparseMatrixBasedRecommenderAlgorithm
 
 
 class SVDAlgorithm(SparseMatrixBasedRecommenderAlgorithm):
@@ -26,8 +27,8 @@ class SVDAlgorithm(SparseMatrixBasedRecommenderAlgorithm):
 
         self.name = 'SVDAlgorithm'
 
-        print(f'Built {self.name} module \n'
-              f'- factors: {self.factors} ')
+        logging.info(f'Built {self.name} module \n'
+                     f'- factors: {self.factors} ')
 
     def fit(self, matrix: sp.spmatrix):
         print('Starting Fitting')
@@ -80,7 +81,7 @@ class AlternatingLeastSquare(SparseMatrixBasedRecommenderAlgorithm):
         '''
 
         self.alpha = alpha
-        self.factors = factors #* 32
+        self.factors = factors  # * 32
         self.regularization = regularization
         self.n_iterations = n_iterations
         self.use_gpu = use_gpu
@@ -90,12 +91,12 @@ class AlternatingLeastSquare(SparseMatrixBasedRecommenderAlgorithm):
 
         self.name = "AlternatingLeastSquare"
 
-        print(f'Built {self.name} module \n'
-              f'- alpha: {self.alpha} \n'
-              f'- factors: {self.factors} \n'
-              f'- regularization: {self.regularization} \n'
-              f'- n_iterations: {self.n_iterations} \n'
-              f'- use_gpu: {self.use_gpu} \n')
+        logging.info(f'Built {self.name} module \n'
+                     f'- alpha: {self.alpha} \n'
+                     f'- factors: {self.factors} \n'
+                     f'- regularization: {self.regularization} \n'
+                     f'- n_iterations: {self.n_iterations} \n'
+                     f'- use_gpu: {self.use_gpu} \n')
 
     def fit(self, matrix: sp.spmatrix):
         print('Starting Fitting')
@@ -158,9 +159,9 @@ class RBMF(SparseMatrixBasedRecommenderAlgorithm):
 
         self.name = "RBMF"
 
-        print(f'Built {self.name} module \n'
-              f'- n_representatives: {self.n_representatives} \n'
-              f'- lam: {self.lam} \n')
+        logging.info(f'Built {self.name} module \n'
+                     f'- n_representatives: {self.n_representatives} \n'
+                     f'- lam: {self.lam} \n')
 
     def fit(self, matrix: sp.spmatrix):
         print('Starting Fitting')

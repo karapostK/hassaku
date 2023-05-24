@@ -1,3 +1,4 @@
+import logging
 import os
 from abc import ABC
 from functools import partial
@@ -41,10 +42,10 @@ class KNNAlgorithm(SparseMatrixBasedRecommenderAlgorithm, ABC):
 
         self.name = 'KNNAlgorithm'
 
-        print(f'Built {self.name} module \n'
-              f'- sim_func: {self.sim_func_enum.name} \n'
-              f'- k: {self.k} \n'
-              f'- shrinkage: {self.shrinkage} \n')
+        logging.info(f'Built {self.name} module \n'
+                     f'- sim_func: {self.sim_func_enum.name} \n'
+                     f'- k: {self.k} \n'
+                     f'- shrinkage: {self.shrinkage} \n')
 
     def save_model_to_path(self, path: str):
         path = os.path.join(path, 'model.npz')
@@ -77,7 +78,7 @@ class UserKNN(KNNAlgorithm):
                  shrinkage: float = .0, **kwargs):
         super().__init__(sim_func, k, shrinkage, **kwargs)
         self.name = 'UserKNN'
-        print(f'Built {self.name} module \n')
+        logging.info(f'Built {self.name} module \n')
 
     def fit(self, matrix: sp.spmatrix):
         """
@@ -97,7 +98,7 @@ class ItemKNN(KNNAlgorithm):
                  shrinkage: float = .0, **kwargs):
         super().__init__(sim_func, k, shrinkage, **kwargs)
         self.name = 'ItemKNN'
-        print(f'Built {self.name} module \n')
+        logging.info(f'Built {self.name} module \n')
 
     def fit(self, matrix: sp.spmatrix):
         """

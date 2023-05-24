@@ -1,11 +1,12 @@
+import logging
 import os.path
 from abc import ABC, abstractmethod
 from typing import Union, Tuple
 
 import torch
+from scipy import sparse as sp
 from torch import nn, Tensor
 from torch.utils import data
-from scipy import sparse as sp
 
 
 class RecommenderAlgorithm(ABC):
@@ -18,7 +19,7 @@ class RecommenderAlgorithm(ABC):
         super().__init__()
         self.name = 'RecommenderAlgorithm'
 
-        print(f'Built {self.name} module')
+        logging.info(f'Built {self.name} module')
 
     @abstractmethod
     def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
@@ -61,7 +62,7 @@ class SparseMatrixBasedRecommenderAlgorithm(RecommenderAlgorithm, ABC):
         self.name = 'SparseMatrixBasedRecommenderAlgorithm'
 
         self.pred_mtx = None
-        print(f'Built {self.name} module')
+        logging.info(f'Built {self.name} module')
 
     @abstractmethod
     def fit(self, matrix: sp.spmatrix):
@@ -87,7 +88,7 @@ class SGDBasedRecommenderAlgorithm(RecommenderAlgorithm, ABC, nn.Module):
         super().__init__()
         self.name = 'SGDBasedRecommenderAlgorithm'
 
-        print(f'Built {self.name} module')
+        logging.info(f'Built {self.name} module')
 
     def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
         """

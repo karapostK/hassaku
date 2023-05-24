@@ -101,7 +101,7 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union
 
     # Logger
     log_callback = WandbLoggerCallback(project=PROJECT_NAME, log_config=True, api_key_file=WANDB_API_KEY_PATH,
-                                       reinit=True, force=True, job_type='hyper - train/val',
+                                       job_type='hyper - train/val',
                                        tags=[alg.name, dataset.name, time_run, 'hyper'],
                                        entity=ENTITY_NAME, group=f'{alg.name} - {dataset.name} - hyper - train/val')
 
@@ -126,17 +126,15 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union
         local_dir=f'./hyper_saved_models/{alg.name}-{dataset.name}',
         name=time_run,
         callbacks=[log_callback, keep_callback],
-        failure_config=air.FailureConfig(fail_fast=True)
+        failure_config=air.FailureConfig(fail_fast=True),
+        verbose=0,
     )
 
     # Setting up the resources per trial
+    dict_resources = {'cpu': hyperparameter_settings['n_cpus'] * (1 + conf['running_settings']['n_workers'])}
     if hyperparameter_settings['n_gpus'] > 0:
-        tune_training_with_resources = tune.with_resources(tune_training,
-                                                           {'gpu': hyperparameter_settings['n_gpus'],
-                                                            'cpu': hyperparameter_settings['n_cpus']})
-    else:
-        tune_training_with_resources = tune.with_resources(tune_training,
-                                                           {'cpu': hyperparameter_settings['n_cpus']})
+        dict_resources['gpu'] = hyperparameter_settings['n_gpus']
+    tune_training_with_resources = tune.with_resources(tune_training, dict_resources)
 
     tuner = tune.Tuner(tune_training_with_resources,
                        param_space=conf,
