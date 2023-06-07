@@ -34,7 +34,7 @@ def log_info_results(metrics):
     :return:
     """
 
-    STR_RESULT = "{:10} : {:.3f}"
+    STR_RESULT = "{:10} : {:.5f}"
 
     for metric_name, metric_value in metrics.items():
         logging.info(STR_RESULT.format(metric_name, metric_value))

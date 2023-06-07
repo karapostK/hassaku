@@ -2,10 +2,10 @@ import logging
 import os
 import typing
 
-import implicit
 import maxvolpy
 import numpy as np
 import torch
+from implicit.als import AlternatingLeastSquares
 from scipy import sparse as sp
 from scipy.sparse.linalg import svds
 
@@ -74,6 +74,7 @@ class AlternatingLeastSquare(SparseMatrixBasedRecommenderAlgorithm):
         From Collaborative Filtering for Implicit Datasets (http://yifanhu.net/PUB/cf.pdf)
         Implementation from the implicit library
         :param alpha: controls the confidence value (see original paper Collaborative Filtering for Implicit Datasets)
+            P.S. This value are the weights given to the positive examples
         :param factors: embedding size
         :param regularization: regularization factor (the l2 factor)
         :param iter: number of iterations for ALS
@@ -81,7 +82,7 @@ class AlternatingLeastSquare(SparseMatrixBasedRecommenderAlgorithm):
         '''
 
         self.alpha = alpha
-        self.factors = factors  # * 32
+        self.factors = factors
         self.regularization = regularization
         self.n_iterations = n_iterations
         self.use_gpu = use_gpu
@@ -101,13 +102,14 @@ class AlternatingLeastSquare(SparseMatrixBasedRecommenderAlgorithm):
     def fit(self, matrix: sp.spmatrix):
         print('Starting Fitting')
 
-        matrix = sp.csr_matrix(matrix.T)
-        als = implicit.als.AlternatingLeastSquares(factors=self.factors,
-                                                   regularization=self.regularization,
-                                                   iterations=self.n_iterations,
-                                                   use_gpu=self.use_gpu,
-                                                   num_threads=10)
-        als.fit(self.alpha * matrix)
+        matrix = sp.csr_matrix(matrix)
+        als = AlternatingLeastSquares(factors=self.factors,
+                                      alpha=self.alpha,
+                                      regularization=self.regularization,
+                                      iterations=self.n_iterations,
+                                      use_gpu=self.use_gpu,
+                                      num_threads=10)
+        als.fit(matrix)
 
         self.items_factors = als.item_factors
         self.users_factors = als.user_factors
@@ -119,7 +121,7 @@ class AlternatingLeastSquare(SparseMatrixBasedRecommenderAlgorithm):
 
         batch_users = self.users_factors[u_idxs]
         batch_items = self.items_factors[i_idxs]
-        out = (batch_items * batch_users[:, None, :]).sum(axis=-1)  # Carrying out the dot product
+        out = (batch_users[:, None, :] * batch_items).sum(axis=-1)  # Carrying out the dot product
 
         return out
 

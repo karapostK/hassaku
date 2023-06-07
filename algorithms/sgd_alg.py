@@ -1,13 +1,23 @@
 import logging
+import warnings
+from io import BytesIO
 from typing import Union, Tuple
 
+import matplotlib
 import torch
+import wandb
+from PIL import Image
+from matplotlib import pyplot as plt
+from sklearn.manifold import TSNE
 from torch import nn
 from torch.nn import functional as F
 from torch.utils import data
 
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm
 from train.utils import general_weight_init
+
+warnings.simplefilter(action='ignore', category=FutureWarning)
+matplotlib.use('agg')
 
 
 class SGDBaseline(SGDBasedRecommenderAlgorithm):
@@ -195,7 +205,7 @@ class ACF(SGDBasedRecommenderAlgorithm):
 
     def get_item_representations(self, i_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
         i_embed = self.item_embed(i_idxs)
-        c_i_unnorm = i_embed @ self.anchors.T  # [batch_size, n_neg_p_1, embedding_dim]
+        c_i_unnorm = i_embed @ self.anchors.T  # [batch_size, n_neg_p_1, n_anchors]
         c_i = nn.Softmax(dim=-1)(c_i_unnorm)
 
         i_anc = c_i @ self.anchors
@@ -249,7 +259,7 @@ class UProtoMF(SGDBasedRecommenderAlgorithm):
         self.user_embed = nn.Embedding(self.n_users, self.embedding_dim)
         self.item_embed = nn.Embedding(self.n_items, self.n_prototypes)
 
-        self.prototypes = nn.Parameter(torch.randn([self.n_prototypes, self.embedding_dim]) * 1. / self.embedding_dim,
+        self.prototypes = nn.Parameter(torch.randn([self.n_prototypes, self.embedding_dim]) * .1 / self.embedding_dim,
                                        requires_grad=True)
 
         self.user_embed.apply(general_weight_init)
@@ -306,6 +316,32 @@ class UProtoMF(SGDBasedRecommenderAlgorithm):
         return UProtoMF(dataset.n_users, dataset.n_items, conf['embedding_dim'], conf['n_prototypes'],
                         conf['sim_proto_weight'], conf['sim_batch_weight'])
 
+    def post_val(self, curr_epoch: int):
+        # This function is run at the end of the evaluation procedure.
+        with torch.no_grad():
+            user_e = self.user_embed.weight.cpu()
+            proto_e = self.prototypes.cpu()
+            proto_user_e = torch.cat([proto_e, user_e])
+
+        tsne = TSNE(init='pca', learning_rate='auto', metric='cosine')
+        tsne_results = tsne.fit_transform(proto_user_e)
+        proto_tsne = tsne_results[:len(proto_e)]
+        user_tsne = tsne_results[len(proto_e):]
+        plt.figure(figsize=(6, 6), dpi=200)
+        plt.scatter(user_tsne[:, 0], user_tsne[:, 1], s=10, alpha=0.6, c='#74add1', label='Users')
+        plt.scatter(proto_tsne[:, 0], proto_tsne[:, 1], s=30, c='#d73027', alpha=0.9, label='Prototypes')
+        plt.axis('off')
+        plt.tight_layout()
+        plt.legend(loc="upper left", prop={'size': 13})
+
+        # Saving it in memory and Loading as PIL
+        buffer = BytesIO()
+        plt.savefig(buffer, format='png')
+        buffer.seek(0)
+        plt.close()
+        wandb_image = wandb.Image(Image.open(buffer), caption="Epoch: {}".format(curr_epoch))
+        return {'latent_space': wandb_image}
+
 
 class IProtoMF(SGDBasedRecommenderAlgorithm):
     """
@@ -326,7 +362,8 @@ class IProtoMF(SGDBasedRecommenderAlgorithm):
         self.user_embed = nn.Embedding(self.n_users, self.n_prototypes)
         self.item_embed = nn.Embedding(self.n_items, self.embedding_dim)
 
-        self.prototypes = nn.Parameter(torch.randn([self.n_prototypes, self.embedding_dim]), requires_grad=True)
+        self.prototypes = nn.Parameter(torch.randn([self.n_prototypes, self.embedding_dim]) * .1 / self.embedding_dim,
+                                       requires_grad=True)
 
         self.user_embed.apply(general_weight_init)
         self.item_embed.apply(general_weight_init)
@@ -365,7 +402,7 @@ class IProtoMF(SGDBasedRecommenderAlgorithm):
         i_embed = self.item_embed(i_idxs)
         i_embed = i_embed.reshape(-1, i_embed.shape[-1])
         sim_mtx = compute_norm_cosine_sim(i_embed, self.prototypes)
-        sim_mtx = sim_mtx.reshape(i_idxs.shape)
+        sim_mtx = sim_mtx.reshape(list(i_idxs.shape) + [self.n_prototypes])
 
         return sim_mtx
 
@@ -383,6 +420,37 @@ class IProtoMF(SGDBasedRecommenderAlgorithm):
     def build_from_conf(conf: dict, dataset: data.Dataset):
         return IProtoMF(dataset.n_users, dataset.n_items, conf['embedding_dim'], conf['n_prototypes'],
                         conf['sim_proto_weight'], conf['sim_batch_weight'])
+
+    def post_val(self, curr_epoch: int):
+        # This function is run at the end of the evaluation procedure.
+        with torch.no_grad():
+            item_e = self.item_embed.weight.cpu()
+            # Reduce # of items
+            if item_e.shape[0] >= 10000:
+                indxs = torch.randperm(item_e.shape[0])[:10000]
+                item_e = item_e[indxs]
+
+            proto_e = self.prototypes.cpu()
+            proto_item_e = torch.cat([proto_e, item_e])
+
+        tsne = TSNE(init='pca', learning_rate='auto', metric='cosine')
+        tsne_results = tsne.fit_transform(proto_item_e)
+        proto_tsne = tsne_results[:len(proto_e)]
+        item_tsne = tsne_results[len(proto_e):]
+        plt.figure(figsize=(6, 6), dpi=200)
+        plt.scatter(item_tsne[:, 0], item_tsne[:, 1], s=10, alpha=0.6, c='#74add1', label='Items')
+        plt.scatter(proto_tsne[:, 0], proto_tsne[:, 1], s=30, c='#d73027', alpha=0.9, label='Prototypes')
+        plt.axis('off')
+        plt.tight_layout()
+        plt.legend(loc="upper left", prop={'size': 13})
+
+        # Saving it in memory and Loading as PIL
+        buffer = BytesIO()
+        plt.savefig(buffer, format='png')
+        buffer.seek(0)
+        plt.close()
+        wandb_image = wandb.Image(Image.open(buffer), caption="Epoch: {}".format(curr_epoch))
+        return {'latent_space': wandb_image}
 
 
 class UIProtoMF(SGDBasedRecommenderAlgorithm):

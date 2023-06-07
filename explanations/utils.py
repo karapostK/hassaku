@@ -54,7 +54,7 @@ def get_top_k_items(item_weights: np.ndarray, items_info: pd.DataFrame, proto_id
     top_k_indexes = np.argsort(weights_proto if invert else -weights_proto)[:top_k]
     top_k_weights = weights_proto[top_k_indexes]
 
-    item_infos_top_k = items_info.set_index('item_id').loc[top_k_indexes]
+    item_infos_top_k = items_info.set_index('item_idx').loc[top_k_indexes]
     item_infos_top_k['item weight'] = top_k_weights
     return item_infos_top_k
 
