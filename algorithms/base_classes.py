@@ -72,6 +72,12 @@ class SparseMatrixBasedRecommenderAlgorithm(RecommenderAlgorithm, ABC):
         pass
 
     def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor):
+        """
+        Returns the score between users and items
+        @param u_idxs: User indexes. Shape is [batch_size]
+        @param i_idxs: Item indexes. Shape is [batch_size, n] where n is an arbitrary number of items. Usually all items.
+        @return:
+        """
         assert self.pred_mtx is not None, 'Prediction Matrix not computed, run fit!'
         if sp.issparse(self.pred_mtx):
             self.pred_mtx = self.pred_mtx.toarray()  # Not elegant but it simplifies the following code

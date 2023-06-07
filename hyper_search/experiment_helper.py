@@ -1,4 +1,3 @@
-import typing
 import warnings
 
 import wandb
@@ -11,11 +10,11 @@ from ray.tune.search.hyperopt import HyperOptSearch
 from algorithms.algorithms_utils import AlgorithmsEnum
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm, SparseMatrixBasedRecommenderAlgorithm
 from algorithms.naive_algs import PopularItems
-from conf.conf_parser import parse_conf_file, parse_conf
+from conf.conf_parser import parse_conf
 from data.data_utils import DatasetsEnum, get_dataloader
 from data.dataset import TrainRecDataset
 from eval.eval import evaluate_recommender_algorithm
-from hyper_search.hyper_params import alg_param
+from hyper_search.hyper_params import alg_data_param
 from hyper_search.utils import KeepOnlyTopModels
 from train.trainer import Trainer
 from utilities.utils import generate_id, reproducible
@@ -76,24 +75,28 @@ def tune_training(conf: dict):
     return metrics_values
 
 
-def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union[str, dict], **kwargs):
+def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, data_path: str, **hyperparameter_settings):
     """
     Runs the train and validation procedure.
     """
     print('Starting Train and Val')
-    # Reading fixed parameters (NB. some parameters might be overridden by the hyperparameters)
-    if isinstance(conf, str):
-        conf = parse_conf_file(conf)
 
-    conf['_in_tune'] = True
+    conf = {
+        'data_path': data_path,
+        '_in_tune': True,
+        'hyperparameter_settings': hyperparameter_settings,
+        'device': 'cuda' if hyperparameter_settings['n_gpus'] > 0 else 'cpu',
+        **alg_data_param[(alg, dataset)],
+    }
+
+    # Adding default parameters if not set
     conf = parse_conf(conf, alg, dataset)
     time_run = conf['time_run']
 
-    # Adding hyperparameters and settings related to hyperparameters
-    conf = {**conf, **alg_param[alg], 'hyperparameter_settings': kwargs}
-
     # Hyperparameter Optimization
-    # The optimizing metric should be set in conf_parser.py and not here.
+    # The actual optimizing metric should be set in conf_parser.py and not here.
+    # During hyperparameter optimization we are interested on the maximum of that metric over all the epochs
+    # This is used as an early stopping criteria.
     optimizing_metric = 'max_optimizing_metric'
 
     # Search Algorithm
@@ -107,9 +110,6 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union
 
     # Saving the models only for the best n_tops models.
     keep_callback = KeepOnlyTopModels(optimizing_metric, n_tops=3)
-
-    # Other experiment's settings
-    hyperparameter_settings = conf['hyperparameter_settings']
 
     # Setting up Tune configurations
     tune_config = tune.TuneConfig(
@@ -131,7 +131,8 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union
     )
 
     # Setting up the resources per trial
-    dict_resources = {'cpu': hyperparameter_settings['n_cpus'] * (1 + conf['running_settings']['n_workers'])}
+    n_workers = conf['running_settings'].get('n_workers', 0)
+    dict_resources = {'cpu': hyperparameter_settings['n_cpus'] * (1 + n_workers)}
     if hyperparameter_settings['n_gpus'] > 0:
         dict_resources['gpu'] = hyperparameter_settings['n_gpus']
     tune_training_with_resources = tune.with_resources(tune_training, dict_resources)
@@ -187,12 +188,12 @@ def run_test(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: dict):
     return metrics_values
 
 
-def start_hyper(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union[str, dict], **kwargs):
+def start_hyper(alg: AlgorithmsEnum, dataset: DatasetsEnum, data_path: str, **kwargs):
     print('Starting Hyperparameter Optimization')
     print(f'Algorithm is {alg.name} - Dataset is {dataset.name}')
 
     # ------ Run train and Val ------ #
-    best_config, best_checkpoint = run_train_val(alg, dataset, conf, **kwargs)
+    best_config, best_checkpoint = run_train_val(alg, dataset, data_path, **kwargs)
     # ------ Run test ------ #
     metric_values = run_test(alg, dataset, best_config)
 

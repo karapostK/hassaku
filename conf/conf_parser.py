@@ -118,20 +118,20 @@ def parse_conf(conf: dict, alg: AlgorithmsEnum, dataset: DatasetsEnum) -> dict:
         if 'lr' not in conf:
             conf['lr'] = DEF_LEARNING_RATE
             added_parameters_list.append(f"lr={conf['lr']}")
-        else:
-            assert conf['lr'] > 0, f"Learning rate ({conf['lr']}) should be positive"
+        #else:
+         #   assert conf['lr'] > 0, f"Learning rate ({conf['lr']}) should be positive"
 
         if 'wd' not in conf:
             conf['wd'] = DEF_WEIGHT_DECAY
             added_parameters_list.append(f"wd={conf['wd']}")
-        else:
-            assert conf['wd'] >= 0, f"Weight Decay ({conf['wd']}) should be positive"
+        #else:
+         #   assert conf['wd'] >= 0, f"Weight Decay ({conf['wd']}) should be positive"
 
         if 'optimizer' not in conf:
             conf['optimizer'] = DEF_OPTIMIZER
             added_parameters_list.append(f"optimizer={conf['optimizer']}")
         else:
-            assert conf['optimizer'] in ['adam', 'adagrad'], f"Optimizer ({conf['optimizer']}) not implemented"
+            assert conf['optimizer'] in ['adam', 'adagrad','adamw'], f"Optimizer ({conf['optimizer']}) not implemented"
 
         if 'rec_loss' not in conf:
             conf['rec_loss'] = DEF_REC_LOSS

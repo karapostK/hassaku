@@ -38,7 +38,12 @@ class Trainer:
             self.pointer_to_model = self.model.module
         self.model.to(self.device)
 
-        self.rec_loss = RecommenderSystemLossesEnum[conf['rec_loss']].value(conf['loss_aggregator'])
+        self.rec_loss = RecommenderSystemLossesEnum[conf['rec_loss']].value(n_items=train_loader.dataset.n_items,
+                                                                            aggregator=conf['loss_aggregator'],
+                                                                            train_neg_strategy=conf[
+                                                                                'train_neg_strategy'],
+                                                                            neg_train=conf['neg_train'])
+
         self.lr = conf['lr']
         self.wd = conf['wd']
 
@@ -65,7 +70,7 @@ class Trainer:
 
         self.best_value = None
         self.best_metrics = None
-
+        self.best_epoch = None
         logging.info(f'Built Trainer module \n'
                      f'- n_epochs: {self.n_epochs} \n'
                      f'- rec_loss: {self.rec_loss.__class__.__name__} \n'
@@ -90,6 +95,7 @@ class Trainer:
         metrics_values = self.val()
 
         self.best_value = metrics_values['max_optimizing_metric'] = metrics_values[self.optimizing_metric]
+        self.best_epoch = metrics_values['best_epoch'] = -1
         self.best_metrics = metrics_values
 
         print('Init - Avg Val Value {:.3f} \n'.format(self.best_value))
@@ -150,6 +156,7 @@ class Trainer:
 
             if curr_value > self.best_value:
                 self.best_value = metrics_values['max_optimizing_metric'] = curr_value
+                self.best_epoch = metrics_values['best_epoch'] = epoch
                 self.best_metrics = metrics_values
 
                 print('Epoch {} - New best model found (val value {:.3f}) \n'.format(epoch, curr_value))
@@ -160,13 +167,20 @@ class Trainer:
                 metrics_values['max_optimizing_metric'] = self.best_value
                 current_patience -= 1
 
+            # Logging
+            log_dict = {**metrics_values,
+                        'epoch_train_loss': epoch_train_loss,
+                        'epoch_train_rec_loss': epoch_train_rec_loss,
+                        'epoch_train_reg_loss': epoch_train_reg_loss}
+            # Execute a post validation function that is specific to the model
+            if hasattr(self.pointer_to_model, 'post_val') and callable(self.pointer_to_model.post_val):
+                log_dict.update(self.pointer_to_model.post_val(epoch))
+
             if self.use_wandb and not self._in_tune:
-                wandb.log({**metrics_values,
-                           'epoch_train_loss': epoch_train_loss,
-                           'epoch_train_rec_loss': epoch_train_rec_loss,
-                           'epoch_train_reg_loss': epoch_train_reg_loss})
+                wandb.log(log_dict)
+
             if self._in_tune:
-                session.report(metrics_values)
+                session.report(log_dict)
 
         return self.best_metrics
 

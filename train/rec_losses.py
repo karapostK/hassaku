@@ -1,3 +1,4 @@
+import math
 from abc import ABC, abstractmethod
 from enum import Enum
 
@@ -6,10 +7,16 @@ from torch import nn
 
 
 class RecommenderSystemLoss(ABC):
-    def __init__(self, aggregator: str = 'mean'):
+    def __init__(self, n_items: int = None, aggregator: str = 'mean', train_neg_strategy: str = 'uniform',
+                 neg_train: int = 4):
         assert aggregator in ['mean', 'sum'], "Type of Aggregator not yet defined"
+        assert train_neg_strategy in ['uniform'], "Type of Negative Strategy not currently supported"
+
         super().__init__()
+        self.n_items = n_items
         self.aggregator = aggregator
+        self.train_neg_strategy = train_neg_strategy
+        self.neg_train = neg_train
 
     @abstractmethod
     def compute_loss(self, logits: torch.Tensor, labels: torch.Tensor):
@@ -17,6 +24,7 @@ class RecommenderSystemLoss(ABC):
 
 
 class RecBinaryCrossEntropy(RecommenderSystemLoss):
+    # Todo: this loss should be adjusted according to the sampling probability
 
     def compute_loss(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         """
@@ -66,9 +74,11 @@ class RecSampledSoftmaxLoss(RecommenderSystemLoss):
     def compute_loss(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         """
         It computes the (Sampled) Softmax Loss (a.k.a. sampled cross entropy) expressed by the formula:
-                            -x_ui +  log( ∑_j e^{x_uj})
+                            -x_ui +  ln( ∑_j e^{x_uj})
         where x_ui and x_uj are the prediction for user u on item i and j, respectively. Item i positive instance while j
-        goes over all the sampled items (negatives + the positive).
+        goes over all the sampled items (negatives + the positive). Negative samples are adjusted by a factor dependent
+        on the sampling strategy and the number of sampled. I.e. ln( e^{x_ui} + ∑_{j!=i} e^{x_uj} * 1 /(n_neg * p(j|u))
+        https://arxiv.org/pdf/2101.08769.pdf
         :param logits: Logits values from the network. The first column always contain the values of positive instances.
                 Shape is (batch_size, 1 + n_neg).
         :param labels: 1-0 Labels. The first column contains 1s while all the others 0s.
@@ -76,6 +86,9 @@ class RecSampledSoftmaxLoss(RecommenderSystemLoss):
         """
 
         pos_logits_sum = - logits[:, 0]
+
+        if self.train_neg_strategy == 'uniform':
+            logits[:, 1:] += math.log(self.n_items / self.neg_train)
         log_sum_exp_sum = torch.logsumexp(logits, dim=-1)
 
         sampled_loss = pos_logits_sum + log_sum_exp_sum
