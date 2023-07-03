@@ -116,7 +116,10 @@ class Trainer:
                 print('Ran out of patience, Stopping ')
                 break
 
-            epoch_train_loss = epoch_train_rec_loss = epoch_train_reg_loss = 0
+            epoch_losses = {
+                'epoch_train_loss': 0,
+                'epoch_train_rec_loss': 0,
+            }
 
             if self.batch_verbose:
                 iterator = tqdm(self.train_loader)
@@ -131,24 +134,25 @@ class Trainer:
                 out = self.model(u_idxs, i_idxs)
 
                 rec_loss = self.rec_loss.compute_loss(out, labels)
-                reg_loss = self.pointer_to_model.get_and_reset_other_loss().to(rec_loss.device)
-                loss = rec_loss + reg_loss
+                reg_losses = self.pointer_to_model.get_and_reset_other_loss()
+                reg_loss = reg_losses['reg_loss'].to(rec_loss.device)
 
-                epoch_train_loss += loss.item()
-                epoch_train_rec_loss += rec_loss.item()
-                epoch_train_reg_loss += reg_loss.item()
+                total_loss = rec_loss + reg_loss
 
-                loss.backward()
+                epoch_losses['epoch_train_loss'] += total_loss.item()
+                epoch_losses['epoch_train_rec_loss'] += rec_loss.item()
+                reg_losses = {'epoch_train_' + k: v.item() for k, v in reg_losses.items()}
+                epoch_losses.update({k: reg_losses[k] + epoch_losses.get(k, 0) for k in reg_losses})
+
+                total_loss.backward()
                 self.optimizer.step()
                 self.optimizer.zero_grad()
 
-            epoch_train_loss /= len(self.train_loader)
-            epoch_train_rec_loss /= len(self.train_loader)
-            epoch_train_reg_loss /= len(self.train_loader)
-            print("Epoch {} - Epoch Avg Train Loss {:.3f} ({:.3f} Rec Loss + {:.3f} Reg Loss )\n".format(epoch,
-                                                                                                         epoch_train_loss,
-                                                                                                         epoch_train_rec_loss,
-                                                                                                         epoch_train_reg_loss))
+            epoch_losses = {k: v / len(self.train_loader) for k, v in epoch_losses.items()}
+
+            print("Epoch {} - Epoch Avg Train Loss {:.3f} ({:.3f} Rec Loss + {:.3f} Reg Loss )\n".
+                  format(epoch, epoch_losses['epoch_train_loss'], epoch_losses['epoch_train_rec_loss'],
+                         epoch_losses['epoch_train_reg_loss']))
 
             metrics_values = self.val()
             curr_value = metrics_values[self.optimizing_metric]
@@ -168,10 +172,7 @@ class Trainer:
                 current_patience -= 1
 
             # Logging
-            log_dict = {**metrics_values,
-                        'epoch_train_loss': epoch_train_loss,
-                        'epoch_train_rec_loss': epoch_train_rec_loss,
-                        'epoch_train_reg_loss': epoch_train_reg_loss}
+            log_dict = {**metrics_values, **epoch_losses}
             # Execute a post validation function that is specific to the model
             if hasattr(self.pointer_to_model, 'post_val') and callable(self.pointer_to_model.post_val):
                 log_dict.update(self.pointer_to_model.post_val(epoch))

@@ -1,7 +1,7 @@
 import logging
 import warnings
 from io import BytesIO
-from typing import Union, Tuple
+from typing import Union, Tuple, Dict
 
 import matplotlib
 import torch
@@ -218,10 +218,17 @@ class ACF(SGDBasedRecommenderAlgorithm):
         dots = (u_anc.unsqueeze(-2) * i_anc).sum(dim=-1)
         return dots
 
-    def get_and_reset_other_loss(self) -> float:
+    def get_and_reset_other_loss(self) -> Dict:
         _acc_exc, _acc_inc = self._acc_exc, self._acc_inc
         self._acc_exc = self._acc_inc = 0
-        return self.delta_exc * _acc_exc - self.delta_inc * _acc_inc
+        exc_loss = self.delta_exc * _acc_exc
+        inc_loss = self.delta_inc * _acc_inc
+
+        return {
+            'reg_loss': exc_loss - inc_loss,
+            'exc_loss': exc_loss,
+            'inc_loss': inc_loss
+        }
 
     @staticmethod
     def build_from_conf(conf: dict, dataset: data.Dataset):
@@ -236,7 +243,10 @@ def compute_norm_cosine_sim(x: torch.Tensor, y: torch.Tensor):
     """
     x_norm = F.normalize(x)
     y_norm = F.normalize(y)
+
     sim_mtx = (1 + x_norm @ y_norm.T) / 2
+    sim_mtx = torch.clamp(sim_mtx, min=0., max=1.)
+
     return sim_mtx
 
 
@@ -306,10 +316,16 @@ class UProtoMF(SGDBasedRecommenderAlgorithm):
         dots = (u_repr.unsqueeze(-2) * i_repr).sum(dim=-1)
         return dots
 
-    def get_and_reset_other_loss(self) -> float:
+    def get_and_reset_other_loss(self) -> Dict:
         acc_r_proto, acc_r_batch = self._acc_r_proto, self._acc_r_batch
         self._acc_r_proto = self._acc_r_batch = 0
-        return self.sim_proto_weight * acc_r_proto + self.sim_batch_weight * acc_r_batch
+        proto_loss = self.sim_proto_weight * acc_r_proto
+        batch_loss = self.sim_batch_weight * acc_r_batch
+        return {
+            'reg_loss': proto_loss + batch_loss,
+            'proto_loss': proto_loss,
+            'batch_loss': batch_loss
+        }
 
     @staticmethod
     def build_from_conf(conf: dict, dataset: data.Dataset):
@@ -319,14 +335,43 @@ class UProtoMF(SGDBasedRecommenderAlgorithm):
     def post_val(self, curr_epoch: int):
         # This function is run at the end of the evaluation procedure.
         with torch.no_grad():
-            user_e = self.user_embed.weight.cpu()
-            proto_e = self.prototypes.cpu()
-            proto_user_e = torch.cat([proto_e, user_e])
+            proto_users = torch.cat([self.prototypes, self.user_embed.weight])
+            sim_mtx = compute_norm_cosine_sim(proto_users, proto_users)
+            dis_mtx = 1 - sim_mtx
 
-        tsne = TSNE(init='pca', learning_rate='auto', metric='cosine')
-        tsne_results = tsne.fit_transform(proto_user_e)
-        proto_tsne = tsne_results[:len(proto_e)]
-        user_tsne = tsne_results[len(proto_e):]
+            # Average pairwise distance between prototypes
+            dis_mtx_proto = dis_mtx[:self.n_prototypes, :self.n_prototypes]
+            dis_mtx_proto_tril = torch.tril(dis_mtx_proto, diagonal=-1)
+            avg_pairwise_proto_dis = (dis_mtx_proto_tril.sum() * 2) / (self.n_prototypes * (self.n_prototypes - 1))
+
+            # User-to-prototype relatedness
+
+            user_to_proto = sim_mtx[self.n_prototypes:, :self.n_prototypes]
+            user_to_proto_mean = user_to_proto.mean(dim=-1).mean()
+            user_to_proto_mean_adjusted = user_to_proto_mean * self.n_prototypes
+            user_to_proto_max = user_to_proto.max(dim=-1).values.mean()
+            user_to_proto_min = user_to_proto.min(dim=-1).values.mean()
+
+            # Entropy
+            user_to_proto_soft = nn.Softmax(dim=-1)(user_to_proto)
+            user_to_proto_entropy = - user_to_proto_soft * (
+                    user_to_proto - torch.logsumexp(user_to_proto, dim=-1, keepdim=True))
+            user_to_proto_entropy = user_to_proto_entropy.mean()
+
+            dis_mtx = dis_mtx.cpu()
+            dis_mtx_proto = dis_mtx_proto.cpu()
+            avg_pairwise_proto_dis = avg_pairwise_proto_dis.item()
+            user_to_proto_mean = user_to_proto_mean.item()
+            user_to_proto_max = user_to_proto_max.item()
+            user_to_proto_min = user_to_proto_min.item()
+            user_to_proto_mean_adjusted = user_to_proto_mean_adjusted.item()
+            user_to_proto_entropy = user_to_proto_entropy.item()
+
+        # Compute TSNE
+        tsne = TSNE(learning_rate='auto', metric='precomputed')
+        tsne_results = tsne.fit_transform(dis_mtx)
+        proto_tsne = tsne_results[:self.n_prototypes]
+        user_tsne = tsne_results[self.n_prototypes:]
         plt.figure(figsize=(6, 6), dpi=200)
         plt.scatter(user_tsne[:, 0], user_tsne[:, 1], s=10, alpha=0.6, c='#74add1', label='Users')
         plt.scatter(proto_tsne[:, 0], proto_tsne[:, 1], s=30, c='#d73027', alpha=0.9, label='Prototypes')
@@ -339,8 +384,27 @@ class UProtoMF(SGDBasedRecommenderAlgorithm):
         plt.savefig(buffer, format='png')
         buffer.seek(0)
         plt.close()
-        wandb_image = wandb.Image(Image.open(buffer), caption="Epoch: {}".format(curr_epoch))
-        return {'latent_space': wandb_image}
+        latent_space_image = wandb.Image(Image.open(buffer), caption="Epoch: {}".format(curr_epoch))
+
+        # Computing distance matrix for prototypes
+        plt.figure(figsize=(5, 5), dpi=100)
+        plt.matshow(dis_mtx_proto, vmin=0, vmax=1, fignum=1, cmap='cividis')
+
+        buffer = BytesIO()
+        plt.savefig(buffer, format='png')
+        buffer.seek(0)
+        plt.close()
+        dis_mtx_proto_image = wandb.Image(Image.open(buffer), caption="Epoch: {}".format(curr_epoch))
+
+        return {'latent_space': latent_space_image,
+                'dis_mtx_proto': dis_mtx_proto_image,
+                'avg_pairwise_proto_dis': avg_pairwise_proto_dis,
+                'user_to_proto_mean': user_to_proto_mean,
+                'user_to_proto_max': user_to_proto_max,
+                'user_to_proto_min': user_to_proto_min,
+                'user_to_proto_mean_adjusted': user_to_proto_mean_adjusted,
+                'user_to_proto_entropy': user_to_proto_entropy
+                }
 
 
 class IProtoMF(SGDBasedRecommenderAlgorithm):
@@ -411,10 +475,16 @@ class IProtoMF(SGDBasedRecommenderAlgorithm):
         dots = (u_repr.unsqueeze(-2) * i_repr).sum(dim=-1)
         return dots
 
-    def get_and_reset_other_loss(self) -> float:
+    def get_and_reset_other_loss(self) -> Dict:
         acc_r_proto, acc_r_batch = self._acc_r_proto, self._acc_r_batch
         self._acc_r_proto = self._acc_r_batch = 0
-        return self.sim_proto_weight * acc_r_proto + self.sim_batch_weight * acc_r_batch
+        proto_loss = self.sim_proto_weight * acc_r_proto
+        batch_loss = self.sim_batch_weight * acc_r_batch
+        return {
+            'reg_loss': proto_loss + batch_loss,
+            'proto_loss': proto_loss,
+            'batch_loss': batch_loss
+        }
 
     @staticmethod
     def build_from_conf(conf: dict, dataset: data.Dataset):
@@ -424,19 +494,47 @@ class IProtoMF(SGDBasedRecommenderAlgorithm):
     def post_val(self, curr_epoch: int):
         # This function is run at the end of the evaluation procedure.
         with torch.no_grad():
-            item_e = self.item_embed.weight.cpu()
-            # Reduce # of items
-            if item_e.shape[0] >= 10000:
-                indxs = torch.randperm(item_e.shape[0])[:10000]
-                item_e = item_e[indxs]
+            item_sample = self.item_embed.weight
+            if item_sample.shape[0] >= 10000:
+                indxs = torch.randperm(item_sample.shape[0])[:10000]
+                item_sample = item_sample[indxs]
 
-            proto_e = self.prototypes.cpu()
-            proto_item_e = torch.cat([proto_e, item_e])
+            proto_items = torch.cat([self.prototypes, item_sample])
+            sim_mtx = compute_norm_cosine_sim(proto_items, proto_items)
+            dis_mtx = 1 - sim_mtx
 
-        tsne = TSNE(init='pca', learning_rate='auto', metric='cosine')
-        tsne_results = tsne.fit_transform(proto_item_e)
-        proto_tsne = tsne_results[:len(proto_e)]
-        item_tsne = tsne_results[len(proto_e):]
+            # Average pairwise distance between prototypes
+            dis_mtx_proto = dis_mtx[:self.n_prototypes, :self.n_prototypes]
+            dis_mtx_proto_tril = torch.tril(dis_mtx_proto, diagonal=-1)
+            avg_pairwise_proto_dis = (dis_mtx_proto_tril.sum() * 2) / (self.n_prototypes * (self.n_prototypes - 1))
+
+            # Item-to-prototype relatedness
+
+            item_to_proto = sim_mtx[self.n_prototypes:, :self.n_prototypes]
+            item_to_proto_mean = item_to_proto.mean(dim=-1).mean()
+            item_to_proto_mean_adjusted = item_to_proto_mean * self.n_prototypes
+            item_to_proto_max = item_to_proto.max(dim=-1).values.mean()
+            item_to_proto_min = item_to_proto.min(dim=-1).values.mean()
+
+            # Entropy
+            item_to_proto_soft = nn.Softmax(dim=-1)(item_to_proto)
+            item_to_proto_entropy = - item_to_proto_soft * (
+                    item_to_proto - torch.logsumexp(item_to_proto, dim=-1, keepdim=True))
+            item_to_proto_entropy = item_to_proto_entropy.mean()
+
+            dis_mtx = dis_mtx.cpu()
+            dis_mtx_proto = dis_mtx_proto.cpu()
+            avg_pairwise_proto_dis = avg_pairwise_proto_dis.item()
+            item_to_proto_mean = item_to_proto_mean.item()
+            item_to_proto_max = item_to_proto_max.item()
+            item_to_proto_min = item_to_proto_min.item()
+            item_to_proto_mean_adjusted = item_to_proto_mean_adjusted.item()
+            item_to_proto_entropy = item_to_proto_entropy.item()
+
+        tsne = TSNE(learning_rate='auto', metric='precomputed')
+        tsne_results = tsne.fit_transform(dis_mtx)
+        proto_tsne = tsne_results[:self.n_prototypes]
+        item_tsne = tsne_results[self.n_prototypes:]
         plt.figure(figsize=(6, 6), dpi=200)
         plt.scatter(item_tsne[:, 0], item_tsne[:, 1], s=10, alpha=0.6, c='#74add1', label='Items')
         plt.scatter(proto_tsne[:, 0], proto_tsne[:, 1], s=30, c='#d73027', alpha=0.9, label='Prototypes')
@@ -449,8 +547,27 @@ class IProtoMF(SGDBasedRecommenderAlgorithm):
         plt.savefig(buffer, format='png')
         buffer.seek(0)
         plt.close()
-        wandb_image = wandb.Image(Image.open(buffer), caption="Epoch: {}".format(curr_epoch))
-        return {'latent_space': wandb_image}
+        latent_space_image = wandb.Image(Image.open(buffer), caption="Epoch: {}".format(curr_epoch))
+
+        # Computing distance matrix for prototypes
+        plt.figure(figsize=(5, 5), dpi=100)
+        plt.matshow(dis_mtx_proto, vmin=0, vmax=1, fignum=1, cmap='cividis')
+
+        buffer = BytesIO()
+        plt.savefig(buffer, format='png')
+        buffer.seek(0)
+        plt.close()
+        dis_mtx_proto_image = wandb.Image(Image.open(buffer), caption="Epoch: {}".format(curr_epoch))
+
+        return {'latent_space': latent_space_image,
+                'dis_mtx_proto': dis_mtx_proto_image,
+                'avg_pairwise_proto_dis': avg_pairwise_proto_dis,
+                'item_to_proto_mean': item_to_proto_mean,
+                'item_to_proto_max': item_to_proto_max,
+                'item_to_proto_min': item_to_proto_min,
+                'item_to_proto_mean_adjusted': item_to_proto_mean_adjusted,
+                'item_to_proto_entropy': item_to_proto_entropy
+                }
 
 
 class UIProtoMF(SGDBasedRecommenderAlgorithm):
@@ -528,11 +645,14 @@ class UIProtoMF(SGDBasedRecommenderAlgorithm):
 
         return dots
 
-    def get_and_reset_other_loss(self) -> float:
-        u_reg = self.uprotomf.get_and_reset_other_loss()
-        i_reg = self.iprotomf.get_and_reset_other_loss()
-
-        return u_reg + i_reg
+    def get_and_reset_other_loss(self) -> Dict:
+        u_reg = {'user_' + k: v for k, v in self.uprotomf.get_and_reset_other_loss().items()}
+        i_reg = {'item_' + k: v for k, v in self.iprotomf.get_and_reset_other_loss().items()}
+        return {
+            'reg_loss': u_reg.pop('user_reg_loss') + i_reg.pop('item_reg_loss'),
+            **u_reg,
+            **i_reg
+        }
 
     @staticmethod
     def build_from_conf(conf: dict, dataset: data.Dataset):

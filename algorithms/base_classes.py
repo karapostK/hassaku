@@ -1,11 +1,11 @@
 import logging
 import os.path
 from abc import ABC, abstractmethod
-from typing import Union, Tuple
+from typing import Union, Tuple, Dict
 
 import torch
 from scipy import sparse as sp
-from torch import nn, Tensor
+from torch import nn
 from torch.utils import data
 
 
@@ -136,14 +136,16 @@ class SGDBasedRecommenderAlgorithm(RecommenderAlgorithm, ABC, nn.Module):
         """
         pass
 
-    def get_and_reset_other_loss(self) -> Tensor:
+    def get_and_reset_other_loss(self) -> Dict:
         """
         Gets and reset the value of other losses defined for the specific module which go beyond the recommender system
         loss and the l2 loss. For example an entropy-based loss for ProtoMF. This function is always called by Trainer
         at the end of the batch pass to get the full loss! Be sure to implement it when the algorithm has additional losses!
-        :return: loss of the feature extractor
+        Note that the dictionary should contain AT LEAST the entry "reg_loss" which contains the aggregated other losses.
+        "reg_loss" is used then for both updating the parameters and logging. The other values in the dictionary are just logged.
+        :return: dictionary containing at least reg_loss
         """
-        return torch.zeros(1)
+        return {'reg_loss': torch.zeros(1)}
 
     @torch.no_grad()
     def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:

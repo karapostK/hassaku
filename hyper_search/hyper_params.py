@@ -78,13 +78,13 @@ alg_param = {
 # Dataset Specific Parameters
 
 ml1m_common_param = {
-    'n_epochs': 25,
+    'n_epochs': 50,
     'max_patience': 5,
     'running_settings':
         {
             'n_workers': 0
         },
-    'eval_batch_size': 64,
+    'eval_batch_size': 256,
 }
 
 lfm2b2020_common_param = {
@@ -125,20 +125,20 @@ knn_lfm2b2020_param = {
 als_lfm2b2020_param = {
     # Hyper Parameters
 
-    'alpha': tune.loguniform(1e-3, 1e2),
-    'regularization': tune.loguniform(1e-4, 1),
+    'alpha': tune.randint(20, 100),
+    'regularization': tune.loguniform(1e-3, 1),
     # Set Parameters
     'n_iterations': 16,
     'use_gpu': False,
-    'eval_batch_size': 150,
-    'factors': 128,
+    'eval_batch_size': 40,
+    'factors': 2048,
 }
 
 # SGD Matrix Factorization
 
 mf_ml1m_param = {
     # Hyper Parameters
-    'lr': tune.loguniform(1e-4, 1e-1),
+    'lr': tune.loguniform(1e-4, 1e-2),
     'wd': tune.loguniform(1e-6, 1e-1),
     'embedding_dim': tune.lograndint(8, 512, base=2),
     'train_batch_size': tune.lograndint(32, 256, base=2),
@@ -157,7 +157,7 @@ mf_lfm2b2020_param = {
     # Hyper Parameters
     'lr': tune.loguniform(1e-4, 1e-1),
     'wd': tune.loguniform(1e-6, 1e-1),
-    'embedding_dim': tune.lograndint(8, 512, base=2),
+    'embedding_dim': tune.lograndint(512, 1024, base=2),
     'train_batch_size': tune.lograndint(32, 256, base=2),
     'neg_train': tune.randint(1, 100),
     # Set Parameters
@@ -175,13 +175,13 @@ mf_lfm2b2020_param = {
 protomf_ml1m_param = {
     # Hyper Parameters
     'lr': tune.loguniform(1e-4, 1e-1),
-    'wd': tune.loguniform(1e-6, 1e-1),
+    'wd': tune.loguniform(1e-6, 1e-2),
     'embedding_dim': tune.lograndint(8, 512, base=2),
     'train_batch_size': tune.lograndint(32, 256, base=2),
     'neg_train': tune.randint(1, 100),
-    'n_prototypes': tune.randint(5, 50),
-    'sim_proto_weight': tune.loguniform(1e-6, 1),
-    'sim_batch_weight': tune.loguniform(1e-6, 1),
+    'n_prototypes': tune.randint(5, 100),
+    'sim_batch_weight': 0,  # tune.loguniform(1e-5, 1e-1),
+    'sim_proto_weight': 0,  # tune.loguniform(1e-6, 1e-3),
     # Set Parameters
     **ml1m_common_param,
     'train_neg_strategy': 'uniform',
@@ -218,4 +218,5 @@ alg_data_param = {
     (AlgorithmsEnum.als, DatasetsEnum.lfm2b2020): als_lfm2b2020_param,
     (AlgorithmsEnum.iprotomf, DatasetsEnum.ml1m): protomf_ml1m_param,
     (AlgorithmsEnum.iprotomf, DatasetsEnum.lfm2b2020): protomf_lfm2b2020_param,
+    (AlgorithmsEnum.uprotomf2, DatasetsEnum.ml1m): protomf_ml1m_param
 }

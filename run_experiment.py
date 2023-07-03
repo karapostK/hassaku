@@ -17,7 +17,7 @@ parser.add_argument('--conf_path', '-c', type=str, help='Path to the .yml contai
 parser.add_argument('--run_type', '-t', type=str, choices=['train_val', 'test', 'train_val_test'],
                     default='train_val_test',
                     help='Type of run to carry out among "Train + Val", "Test", and "Train + Val + Test"')
-parser.add_argument('--log', type=str, default='warning')
+parser.add_argument('--log', type=str, default='WARNING')
 
 args = parser.parse_args()
 
