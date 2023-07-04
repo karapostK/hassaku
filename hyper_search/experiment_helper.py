@@ -126,7 +126,7 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, data_path: str, **
         local_dir=f'./hyper_saved_models/{alg.name}-{dataset.name}',
         name=time_run,
         callbacks=[log_callback, keep_callback],
-        failure_config=air.FailureConfig(fail_fast=True),
+        failure_config=air.FailureConfig(max_failures=3),
         verbose=0,
     )
 

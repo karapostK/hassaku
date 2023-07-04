@@ -218,5 +218,4 @@ alg_data_param = {
     (AlgorithmsEnum.als, DatasetsEnum.lfm2b2020): als_lfm2b2020_param,
     (AlgorithmsEnum.iprotomf, DatasetsEnum.ml1m): protomf_ml1m_param,
     (AlgorithmsEnum.iprotomf, DatasetsEnum.lfm2b2020): protomf_lfm2b2020_param,
-    (AlgorithmsEnum.uprotomf2, DatasetsEnum.ml1m): protomf_ml1m_param
 }
