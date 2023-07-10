@@ -21,6 +21,8 @@ parser.add_argument('--n_cpus', '-ncpu', type=float, default=1, required=False,
                     help="Number of cpus per trails (<= 1 values are possible)")
 parser.add_argument('--n_concurrent', '-nc', type=int, default=None, required=False,
                     help='Number of allowed concurrent trials.')
+parser.add_argument('--tags', '-t', type=str, action='append', default=None, required=False,
+                    help='Additional tag to add to wandb. One call = One tag. To add multiple tags use -t multiple times.')
 
 args = parser.parse_args()
 
@@ -31,5 +33,7 @@ n_samples = args.n_samples
 n_gpus = args.n_gpus
 n_concurrent = args.n_concurrent
 n_cpus = args.n_cpus
+tags = args.tags
 
-start_hyper(alg, dataset, data_path, n_gpus=n_gpus, n_concurrent=n_concurrent, n_samples=n_samples, n_cpus=n_cpus)
+start_hyper(alg, dataset, data_path, n_gpus=n_gpus, n_concurrent=n_concurrent, n_samples=n_samples, n_cpus=n_cpus,
+            tags=tags)

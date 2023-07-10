@@ -103,9 +103,13 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, data_path: str, **
     search_alg = HyperOptSearch(random_state_seed=conf['running_settings']['seed'])
 
     # Logger
+    tags = [alg.name, dataset.name, time_run, 'hyper']
+    if hyperparameter_settings['tags']:
+        tags += hyperparameter_settings['tags']
+
     log_callback = WandbLoggerCallback(project=PROJECT_NAME, log_config=True, api_key_file=WANDB_API_KEY_PATH,
                                        job_type='hyper - train/val',
-                                       tags=[alg.name, dataset.name, time_run, 'hyper'],
+                                       tags=tags,
                                        entity=ENTITY_NAME, group=f'{alg.name} - {dataset.name} - hyper - train/val')
 
     # Saving the models only for the best n_tops models.
@@ -160,15 +164,18 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, data_path: str, **
     # return best_config, best_checkpoint
 
 
-def run_test(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: dict):
+def run_test(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: dict, **kwargs):
     """
     Runs the test procedure.
     """
     print('Starting Test')
     time_run = conf['time_run']
 
+    tags = [alg.name, dataset.name, time_run, 'hyper']
+    if kwargs['tags']:
+        tags += kwargs['tags']
     wandb.init(project=PROJECT_NAME, entity=ENTITY_NAME, config=conf,
-               tags=[alg.name, dataset.name, time_run, 'hyper'],
+               tags=tags,
                group=f'{alg.name} - {dataset.name} - hyper - test', name=time_run, job_type='hyper - test', reinit=True)
 
     test_loader = get_dataloader(conf, 'test')
@@ -195,6 +202,6 @@ def start_hyper(alg: AlgorithmsEnum, dataset: DatasetsEnum, data_path: str, **kw
     # ------ Run train and Val ------ #
     best_config, best_checkpoint = run_train_val(alg, dataset, data_path, **kwargs)
     # ------ Run test ------ #
-    metric_values = run_test(alg, dataset, best_config)
+    metric_values = run_test(alg, dataset, best_config, **kwargs)
 
     return metric_values
