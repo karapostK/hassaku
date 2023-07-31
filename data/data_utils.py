@@ -231,6 +231,43 @@ def split_temporal_order_ratio_based(lhs: pd.DataFrame, ratios=(0.8, 0.1, 0.1)):
     return lhs, train_data, val_data, test_data
 
 
+def split_random_order_ratio_based(lhs: pd.DataFrame, ratios=(0.8, 0.1, 0.1), seed=13):
+    """
+    Split the interaction in a random fashion, for each user, using the ratio specified as parameters. E.g. A split with (0.7,
+    0.2,0.1) will first randomize the data then take the first 70% of the interactions as train data,
+    the subsequent 20% as validation data, and the remaining last 10% as test data.
+    @param lhs: lhs: Pandas Dataframe
+    containing the listening records. Has columns ["timestamp", "user_idx", "item_idx"]
+    @param ratios: float values that denote the ratios for train, val, test. The values must sum to 1.
+    @param seed: seed for the ranomization
+    @return:
+        lhs: Pandas Dataframe containing the listening records sorted.
+        train_data: Pandas Dataframe containing the train data.
+        val_data: Pandas Dataframe containing the val data.
+        test_data: Pandas Dataframe containing the test data.
+
+    """
+    assert sum(ratios) == 1, 'Ratios do not sum to 1!'
+    lhs = lhs.sample(frac=1., random_state=seed)
+    train_idxs = []
+    val_idxs = []
+    test_idxs = []
+    for user, user_group in tqdm(lhs.groupby('user')):
+        n_test = math.ceil(len(user_group) * ratios[-1])
+        n_val = math.ceil(len(user_group) * ratios[-2])
+        n_train = len(user_group) - n_val - n_test
+
+        train_idxs += list(user_group.index[:n_train])
+        val_idxs += list(user_group.index[n_train:n_train + n_val])
+        test_idxs += list(user_group.index[-n_test:])
+
+    train_data = lhs.loc[train_idxs]
+    val_data = lhs.loc[val_idxs]
+    test_data = lhs.loc[test_idxs]
+
+    return lhs, train_data, val_data, test_data
+
+
 def get_dataloader(conf: dict, split_set: str) -> DataLoader:
     """
         Returns the dataloader associated to the configuration in conf
