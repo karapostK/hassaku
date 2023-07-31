@@ -1,37 +1,58 @@
+import warnings
+from io import BytesIO
+from typing import Union
+
+import matplotlib
 import numpy as np
 import pandas as pd
+import torch
+import wandb
+from PIL import Image
 from matplotlib import pyplot as plt
 from sklearn.manifold import TSNE
 
+warnings.simplefilter(action='ignore', category=FutureWarning)
 
-def tsne_plot(objects: np.ndarray, prototypes: np.ndarray, object_legend_text: str = 'Object', perplexity: int = 5,
-              path_save_fig: str = None):
+MAX_ENTITIES = 10000
+
+
+def tsne_plot(dis_mtx: np.ndarray, n_prototypes: int, entity_legend_text: str = 'Entity',
+              path_save_fig: Union[str, BytesIO] = None,
+              save_fig_format: str = 'png'):
     """
-    Creates a TSNE plot to visualize the object embeddings and the prototypes in the same space.
-    :param objects: Object (users/items) embedding to plot in the same space of the prototypes
-    :param prototypes: Prototypes (users/items) embeddings
-    :param object_legend_text: Text to show in the legend for the Object
-    :param perplexity: Perplexity value used in TSNE, default to 5.
-    :param path_save_fig: Path of where to save the figure when generated. If none, it does not save the figure
+    Creates a TSNE plot to visualize the entity embeddings and the prototypes on a 2d plane.
+    @param dis_mtx: Pre-computed distance matrix of prototypes and entities (users or items).
+    NB. The prototypes ARE in the first row of the matrix!
+    @param n_prototypes: Number of prototypes. The first n_prototypes rows/columns of the distance matrix are considered
+    belonging to the prototypes.
+    @param entity_legend_text: Text to show in the legend for the Entity
+    @param path_save_fig: It can be:
+        - None, does not save the figure and calls plt.show()
+        - Path, saves the figure
+    @param save_fig_format: Used only if path_save_fig is set. Format of the figure to save
+
 
     """
-    tsne = TSNE(perplexity=perplexity, metric='cosine', init='pca', learning_rate='auto', square_distances=True,
-                random_state=42)
+    tsne = TSNE(learning_rate='auto', metric='precomputed')
 
-    tsne_results = tsne.fit_transform(np.vstack([prototypes, objects]))
-    tsne_protos = tsne_results[:len(prototypes)]
-    tsne_embeds = tsne_results[len(prototypes):]
+    tsne_results = tsne.fit_transform(dis_mtx)
 
-    plt.figure(figsize=(6, 6), dpi=100)
-    plt.scatter(tsne_embeds[:, 0], tsne_embeds[:, 1], s=10, alpha=0.6, c='#74add1', label=object_legend_text)
-    plt.scatter(tsne_protos[:, 0], tsne_protos[:, 1], s=30, c='#d73027', alpha=0.9, label='Prototypes')
+    tnse_proto = tsne_results[:n_prototypes]
+    tsne_entity = tsne_results[n_prototypes:]
+
+    plt.figure(figsize=(6, 6), dpi=200)
+
+    plt.scatter(tsne_entity[:, 0], tsne_entity[:, 1], s=10, alpha=0.6, c='#74add1', label=entity_legend_text)
+    plt.scatter(tnse_proto[:, 0], tnse_proto[:, 1], s=30, c='#d73027', alpha=0.9, label='Prototypes')
 
     plt.axis('off')
     plt.tight_layout()
     plt.legend(loc="upper left", prop={'size': 13})
+
     if path_save_fig:
-        plt.savefig(path_save_fig, format='pdf')
-    plt.show()
+        plt.savefig(path_save_fig, format=save_fig_format)
+    else:
+        plt.show()
 
 
 def get_top_k_items(item_weights: np.ndarray, items_info: pd.DataFrame, proto_idx: int,
@@ -145,3 +166,96 @@ def weight_visualization(u_sim_mtx: np.ndarray, u_proj: np.ndarray, i_sim_mtx: n
     i_axes[2].set_xlabel('$ \mathbf{t}^{*} $', fontsize=24)
     plt.tight_layout()
     plt.plot()
+
+
+def protomf_post_val(prototypes, entity_embeddings, sim_func, dis_func, entity_name, curr_epoch):
+    """
+    Computes:
+        - Latent Space projection with TSNE of the entity (user/item) embeddings.
+        - Average pair-wise prototype similarity.
+        - Entity-to-prototypes statistics (mean, max, min) average across all users.
+
+    """
+    n_prototypes = len(prototypes)
+    matplotlib.use('agg')
+    with torch.no_grad():
+        # Sampling entities to avoid GPU crash
+        if len(entity_embeddings) >= MAX_ENTITIES:
+            indxs = torch.randperm(len(entity_embeddings))[:MAX_ENTITIES]
+            entity_embeddings = entity_embeddings[indxs]
+
+        proto_entities = torch.cat([prototypes, entity_embeddings])
+
+        # Computing sim_mtx and dis_mtx
+        sim_mtx = sim_func(proto_entities, proto_entities)
+        dis_mtx = dis_func(sim_mtx).cpu()
+
+        # Computing average pair-wise prototypes similarity
+        sim_mtx_proto = sim_mtx[:n_prototypes, :n_prototypes]
+
+        sim_mtx_proto_tril = torch.tril(sim_mtx_proto, diagonal=-1)
+        avg_pairwise_proto_sim = ((sim_mtx_proto_tril.sum() * 2) / (n_prototypes * (n_prototypes - 1))).item()
+
+        # Computing entity-to-prototypes statistics
+        entity_to_proto = sim_mtx[n_prototypes:, :n_prototypes]
+
+        entity_to_proto_mean = entity_to_proto.mean(dim=-1).mean().item()
+        entity_to_proto_max = entity_to_proto.max(dim=-1).values.mean().item()
+        entity_to_proto_min = entity_to_proto.min(dim=-1).values.mean().item()
+
+    # Compute TSNE
+    buffer = BytesIO()
+    tsne_plot(dis_mtx, n_prototypes, entity_legend_text=entity_name, path_save_fig=buffer, save_fig_format='png')
+    buffer.seek(0)
+    latent_space_image = wandb.Image(Image.open(buffer), caption="Epoch: {}".format(curr_epoch))
+
+    return {
+        'latent_space': latent_space_image,
+        'avg_pairwise_proto_sim': avg_pairwise_proto_sim,
+        'entity_to_proto_mean': entity_to_proto_mean,
+        'entity_to_proto_max': entity_to_proto_max,
+        'entity_to_proto_min': entity_to_proto_min,
+    }
+
+
+def protomfs_post_val(prototypes, entity_embeddings, other_entity_embeddings, sim_func, dis_func, entity_name,
+                      curr_epoch):
+    """
+    Computes:
+        - Latent Space projection with TSNE of the entity (user/item) embeddings.
+        - Average pair-wise prototype similarity.
+        - Entity-to-prototypes statistics (mean, max, min) average across all users.
+        - Other entity histograms of the weights (the weights multiplied to the similarities)
+    """
+    post_val_dict = protomf_post_val(prototypes, entity_embeddings, sim_func, dis_func, entity_name, curr_epoch)
+
+    other_entity_embeddings = other_entity_embeddings.detach().cpu().numpy()
+
+    # Computing non-zero weights in the histograms
+    bin_weights = other_entity_embeddings.astype(bool).sum(axis=-1)
+    bin_weights_mean = bin_weights.mean()
+    plt.figure(figsize=(4, 4), dpi=100)
+    plt.hist(bin_weights, bins=50)
+    buffer = BytesIO()
+    plt.savefig(buffer, format='png')
+    buffer.seek(0)
+    plt.close()
+    bin_weights_image = wandb.Image(Image.open(buffer), caption="Epoch: {}".format(curr_epoch))
+
+    # Computing summed weights in the histograms
+    sum_weights = other_entity_embeddings.sum(axis=-1)
+    sum_weights_mean = sum_weights.mean()
+    plt.figure(figsize=(4, 4), dpi=100)
+    plt.hist(sum_weights, bins=50)
+    buffer = BytesIO()
+    plt.savefig(buffer, format='png')
+    buffer.seek(0)
+    plt.close()
+    sum_weights_image = wandb.Image(Image.open(buffer), caption="Epoch: {}".format(curr_epoch))
+
+    post_val_dict['bin_weights'] = bin_weights_image
+    post_val_dict['sum_weights'] = sum_weights_image
+    post_val_dict['bin_weights_mean'] = bin_weights_mean
+    post_val_dict['sum_weights_mean'] = sum_weights_mean
+
+    return post_val_dict
