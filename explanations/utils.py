@@ -54,6 +54,9 @@ def tsne_plot(dis_mtx: np.ndarray, n_prototypes: int, entity_legend_text: str = 
     else:
         plt.show()
 
+    plt.close()
+
+
 
 def get_top_k_items(item_weights: np.ndarray, items_info: pd.DataFrame, proto_idx: int,
                     top_k: int = 10, invert: bool = False):
