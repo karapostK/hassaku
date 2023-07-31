@@ -149,6 +149,7 @@ class RBMF(SparseMatrixBasedRecommenderAlgorithm):
         super().__init__()
         '''
         User Representative-based Matrix Factorization (from https://dl.acm.org/doi/10.1145/2043932.2043943)
+        This implementation considers the basic RBMF, as proposed in the paper.
         :param n_representatives: number of representatives to pick
         :param lam: l2 regularization
         '''
@@ -170,15 +171,16 @@ class RBMF(SparseMatrixBasedRecommenderAlgorithm):
         matrix = sp.csr_matrix(matrix)
         matrix = matrix.asfptype()  # casting to float
 
-        u, _, _ = svds(matrix, k=self.n_representatives)
+        # Representative Pursuit
+        u, _, _ = svds(matrix, k=self.n_representatives)  # Dimension Reduction
+        indxs, _ = maxvolpy.maxvol.maxvol(u)  # Basis Selection (indexes of the users that maxime the square volume)
+        C = matrix[indxs]  # Extracting rows form the original matrix [n_representatives, n_items]
 
-        indxs, _ = maxvolpy.maxvol.maxvol(u)
-        C = matrix[indxs]
-        A = np.linalg.inv(C @ C.T + self.lam * np.eye(self.n_representatives))
-        X = matrix @ C.T @ A
+        Inv = np.linalg.inv(C @ C.T + self.lam * np.eye(self.n_representatives))
+        X = matrix @ C.T @ Inv
 
-        self.X = np.array(X)
-        self.C = C.toarray().T
+        self.X = np.array(X)  # [n_users, n_representatives]
+        self.C = C.toarray().T  # [n_items, n_representatives]
 
         print('End Fitting')
 
@@ -187,7 +189,7 @@ class RBMF(SparseMatrixBasedRecommenderAlgorithm):
 
         batch_users = self.X[u_idxs]
         batch_items = self.C[i_idxs]
-        out = (batch_items * batch_users[:, None, :]).sum(axis=-1)  # Carrying out the dot product
+        out = (batch_users[:, None, :] * batch_items).sum(axis=-1)  # Carrying out the dot product
 
         return out
 

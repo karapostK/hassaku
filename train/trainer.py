@@ -150,20 +150,20 @@ class Trainer:
 
             epoch_losses = {k: v / len(self.train_loader) for k, v in epoch_losses.items()}
 
-            print("Epoch {} - Epoch Avg Train Loss {:.3f} ({:.3f} Rec Loss + {:.3f} Reg Loss )\n".
+            print("Epoch {} - Epoch Avg Train Loss {:.4f} ({:.4f} Rec Loss + {:.4f} Reg Loss )\n".
                   format(epoch, epoch_losses['epoch_train_loss'], epoch_losses['epoch_train_rec_loss'],
                          epoch_losses['epoch_train_reg_loss']))
 
             metrics_values = self.val()
             curr_value = metrics_values[self.optimizing_metric]
-            print('Epoch {} - Avg Val Value {:.3f} \n'.format(epoch, curr_value))
+            print('Epoch {} - Avg Val Value {:.4f} \n'.format(epoch, curr_value))
 
             if curr_value > self.best_value:
                 self.best_value = metrics_values['max_optimizing_metric'] = curr_value
                 self.best_epoch = metrics_values['best_epoch'] = epoch
                 self.best_metrics = metrics_values
 
-                print('Epoch {} - New best model found (val value {:.3f}) \n'.format(epoch, curr_value))
+                print('Epoch {} - New best model found (val value {:.4f}) \n'.format(epoch, curr_value))
                 self.pointer_to_model.save_model_to_path(self.model_path)
 
                 current_patience = self.max_patience  # Reset patience
