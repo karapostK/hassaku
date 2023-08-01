@@ -40,8 +40,8 @@ class KeepOnlyTopModels(Callback):
 
         trial_max = self._trials_maxs[trial]
 
-        print(f'Trial {trial.trial_id} ended with maximum metric: {round(trial_max, 3)}')
-        print(f'Current top trial metrics: {[round(x, 3) for x in self._top_maxs]}')
+        print(f'Trial {trial.trial_id} ended with maximum metric: {round(trial_max, 4)}')
+        print(f'Current top trial metrics: {[round(x, 4) for x in self._top_maxs]}')
 
         argmin = np.argmin(self._top_maxs)
         if self._top_maxs[argmin] < trial_max:
