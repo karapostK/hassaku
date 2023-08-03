@@ -207,4 +207,3 @@ dependencies:
     - widgetsnbextension==4.0.7
     - wrapt==1.13.3
     - zipp==3.7.0
-prefix: /home/alessandro/anaconda3/envs/hassaku
