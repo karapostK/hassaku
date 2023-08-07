@@ -92,19 +92,21 @@ class Trainer:
 
         current_patience = self.max_patience
 
-        metrics_values = self.val()
+        log_dict = self.val()
 
-        self.best_value = metrics_values['max_optimizing_metric'] = metrics_values[self.optimizing_metric]
-        self.best_epoch = metrics_values['best_epoch'] = -1
-        self.best_metrics = metrics_values
+        self.best_value = log_dict['max_optimizing_metric'] = log_dict[self.optimizing_metric]
+        self.best_epoch = log_dict['best_epoch'] = -1
+        self.best_metrics = log_dict
+        if hasattr(self.pointer_to_model, 'post_val') and callable(self.pointer_to_model.post_val):
+            log_dict.update(self.pointer_to_model.post_val(-1))
 
         print('Init - Avg Val Value {:.3f} \n'.format(self.best_value))
 
         if self.use_wandb and not self._in_tune:
-            wandb.log(metrics_values)
+            wandb.log(log_dict)
 
         if self._in_tune:
-            session.report(metrics_values)
+            session.report(log_dict)
 
         self.pointer_to_model.save_model_to_path(self.model_path)
 
