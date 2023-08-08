@@ -197,14 +197,11 @@ class ACF(SGDBasedRecommenderAlgorithm):
         self.delta_exc = delta_exc
         self.delta_inc = delta_inc
 
-        self.anchors = nn.Parameter(torch.randn([self.n_anchors, self.embedding_dim]) * .1 / self.embedding_dim,
-                                    requires_grad=True)
+        # NB. In order to ensure stability, ACF's weights **need** not to be initialized with small values.
+        self.anchors = nn.Parameter(torch.randn([self.n_anchors, self.embedding_dim]), requires_grad=True)
 
         self.user_embed = nn.Embedding(self.n_users, self.embedding_dim)
         self.item_embed = nn.Embedding(self.n_items, self.embedding_dim)
-
-        self.user_embed.apply(general_weight_init)
-        self.item_embed.apply(general_weight_init)
 
         self._acc_exc = 0
         self._acc_inc = 0
