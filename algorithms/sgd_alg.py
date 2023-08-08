@@ -1,5 +1,5 @@
 import logging
-import warnings
+import math
 from typing import Union, Tuple, Dict
 
 import torch
@@ -63,7 +63,7 @@ def entropy_from_softmax(p: torch.Tensor, p_unnorm: torch.Tensor):
     @return: entropy of p. Shape is [*]
     """
 
-    return - (p * (p_unnorm - torch.logsumexp(p_unnorm, dim=-1, keepdim=True)))
+    return (- (p * (p_unnorm - torch.logsumexp(p_unnorm, dim=-1, keepdim=True)))).sum(-1)
 
 
 class SGDBaseline(SGDBasedRecommenderAlgorithm):
@@ -184,11 +184,10 @@ class SGDMatrixFactorization(SGDBasedRecommenderAlgorithm):
 class ACF(SGDBasedRecommenderAlgorithm):
     """
     Implements Anchor-based Collaborative Filtering by Barkan et al.(https://dl.acm.org/doi/pdf/10.1145/3459637.3482056)
-    NB. Loss aggregation SHOULD BE SWITCHED to 'sum' instead of 'mean' (used in the original paper).
     """
 
     def __init__(self, n_users: int, n_items: int, embedding_dim: int = 100, n_anchors: int = 20,
-                 delta_exc: float = 1e-1, delta_inc: float = 1e-2, loss_aggregator: str = 'sum'):
+                 delta_exc: float = 1e-1, delta_inc: float = 1e-2):
         super().__init__()
 
         self.n_users = n_users
@@ -197,11 +196,6 @@ class ACF(SGDBasedRecommenderAlgorithm):
         self.n_anchors = n_anchors
         self.delta_exc = delta_exc
         self.delta_inc = delta_inc
-        self.loss_aggregator = loss_aggregator
-
-        if self.loss_aggregator != 'sum':
-            warnings.warn(f"Loss aggregation for ACF has been set to '{self.loss_aggregator}' instead of 'sum' as "
-                          f"proposed in the original paper.")
 
         self.anchors = nn.Parameter(torch.randn([self.n_anchors, self.embedding_dim]) * .1 / self.embedding_dim,
                                     requires_grad=True)
@@ -234,22 +228,14 @@ class ACF(SGDBasedRecommenderAlgorithm):
         _, c_i, c_i_unnorm = i_repr
 
         # Exclusiveness constraint
-        exc_values = entropy_from_softmax(c_i, c_i_unnorm)
+        exc_values = entropy_from_softmax(c_i, c_i_unnorm)  # [batch_size, n_neg +1] or [batch_size]
+        exc_loss = exc_values.sum()
 
         # Inclusiveness constraint
-        c_i_flat = c_i.reshape(-1, self.n_anchors)
+        c_i_flat = c_i.reshape(-1, self.n_anchors)  # [*, n_anchors]
         q_k = c_i_flat.sum(dim=0) / c_i.sum()  # [n_anchors]
-        inc_values = - (q_k * torch.log(q_k))
-
-        # Aggregation
-        if self.loss_aggregator == 'sum':
-            exc_loss = exc_values.sum()
-            inc_loss = inc_values.sum()
-        elif self.loss_aggregator == 'mean':
-            exc_loss = exc_values.mean()
-            inc_loss = inc_values.mean()
-        else:
-            raise ValueError(f'Loss aggregator {self.loss_aggregator} not implemented for ACF')
+        inc_entropy = (- q_k * torch.log(q_k)).sum()
+        inc_loss = math.log(self.n_anchors) - inc_entropy  # Maximizing the Entropy
 
         self._acc_exc += exc_loss
         self._acc_inc += inc_loss
@@ -268,7 +254,7 @@ class ACF(SGDBasedRecommenderAlgorithm):
     def get_item_representations(self, i_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
         i_embed = self.item_embed(i_idxs)  # [batch_size, (n_neg + 1), embedding_dim]
         c_i_unnorm = i_embed @ self.anchors.T  # [batch_size, (n_neg + 1), n_anchors]
-        c_i = nn.Softmax(dim=-1)(c_i_unnorm)
+        c_i = nn.Softmax(dim=-1)(c_i_unnorm)  # [batch_size, (n_neg + 1), n_anchors]
 
         i_anc = c_i @ self.anchors  # [batch_size, (n_neg + 1), embedding_dim]
         return i_anc, c_i, c_i_unnorm
@@ -284,7 +270,7 @@ class ACF(SGDBasedRecommenderAlgorithm):
         _acc_exc, _acc_inc = self._acc_exc, self._acc_inc
         self._acc_exc = self._acc_inc = 0
         exc_loss = self.delta_exc * _acc_exc
-        inc_loss = - self.delta_inc * _acc_inc  # Maximizing here
+        inc_loss = self.delta_inc * _acc_inc
 
         return {
             'reg_loss': exc_loss + inc_loss,
@@ -295,7 +281,16 @@ class ACF(SGDBasedRecommenderAlgorithm):
     @staticmethod
     def build_from_conf(conf: dict, dataset: data.Dataset):
         return ACF(dataset.n_users, dataset.n_items, conf['embedding_dim'], conf['n_anchors'],
-                   conf['delta_exc'], conf['delta_inc'], conf['loss_aggregator'])
+                   conf['delta_exc'], conf['delta_inc'])
+
+    def post_val(self, curr_epoch: int):
+        return protomf_post_val(
+            self.anchors,
+            self.item_embed.weight,
+            compute_cosine_sim,
+            lambda x: 1 - x,
+            "Items",
+            curr_epoch)
 
 
 class UProtoMF(SGDBasedRecommenderAlgorithm):
@@ -638,7 +633,7 @@ class UProtoMFs(SGDBasedRecommenderAlgorithm):
             self.user_embed.weight,
             self.relu(self.item_embed.weight),
             compute_cosine_sim,
-            lambda x: (1 - x) / 2,
+            lambda x: 1 - x,
             "Users",
             curr_epoch)
 
@@ -701,7 +696,7 @@ class IProtoMFs(SGDBasedRecommenderAlgorithm):
             self.item_embed.weight,
             self.relu(self.user_embed.weight),
             compute_cosine_sim,
-            lambda x: (1 - x) / 2,
+            lambda x: 1 - x,
             "Items",
             curr_epoch)
 
