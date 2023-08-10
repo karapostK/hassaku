@@ -47,6 +47,9 @@ class FullEvaluator:
         k_sorted_values = sorted(K_VALUES, reverse=True)
         k_max = k_sorted_values[0]
         idx_topk = logits.topk(k=k_max).indices
+        self.n_entries[-1] += logits.shape[0]
+        group_n_entries = defaultdict(int)
+
         for k in k_sorted_values:
             idx_topk = idx_topk[:, :k]
             for metric_name, metric in \
@@ -69,7 +72,11 @@ class FullEvaluator:
                         group_metric = metric_result[group_metric_idx]
                         self.group_metrics[group_idx][metric_name.format(k)] += \
                             group_metric.sum().item() if self.aggr_by_group else group_metric
-                        self.n_entries[group_idx] += group_metric.shape[0]
+                        group_n_entries[group_idx] = group_metric.shape[0]
+
+        if self.n_groups > 0:
+            for group_idx in range(self.n_groups):
+                self.n_entries[group_idx] += group_n_entries[group_idx]
 
     def get_results(self):
         metrics_dict = dict()
