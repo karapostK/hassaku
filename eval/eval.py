@@ -62,7 +62,6 @@ class FullEvaluator:
                 # Collect results for 'all' users group
                 self.group_metrics[-1][metric_name.format(k)] += \
                     metric_result.sum().item() if self.aggr_by_group else metric_result
-                self.n_entries[-1] += logits.shape[0]
 
                 # Collect results for specific user groups
                 if self.n_groups > 0:
