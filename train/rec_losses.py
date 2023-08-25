@@ -22,6 +22,9 @@ class RecommenderSystemLoss(ABC):
     def compute_loss(self, logits: torch.Tensor, labels: torch.Tensor):
         pass
 
+    def compute_weighted_loss(self, logits: torch.Tensor, labels: torch.Tensor, weights: torch.Tensor):
+        raise ValueError('Weighted Loss not yet implemented!')
+
 
 class RecBinaryCrossEntropy(RecommenderSystemLoss):
     # Todo: this loss should be adjusted according to the sampling probability
@@ -68,6 +71,20 @@ class RecBayesianPersonalizedRankingLoss(RecommenderSystemLoss):
 
         return loss
 
+    def compute_weighted_loss(self, logits: torch.Tensor, labels: torch.Tensor, weights: torch.Tensor):
+        pos_logits = logits[:, 0].unsqueeze(1)  # [batch_size,1]
+        neg_logits = logits[:, 1:]  # [batch_size,n_neg]
+
+        labels = labels[:, 0]  # I guess this is just to avoid problems with the device
+        labels = torch.repeat_interleave(labels, neg_logits.shape[1])
+
+        weights = torch.repeat_interleave(weights, neg_logits.shape[1])
+        diff_logits = pos_logits - neg_logits
+
+        loss = nn.BCEWithLogitsLoss(reduction=self.aggregator, weight=weights)(diff_logits.flatten(), labels.flatten())
+
+        return loss
+
 
 class RecSampledSoftmaxLoss(RecommenderSystemLoss):
 
@@ -97,6 +114,21 @@ class RecSampledSoftmaxLoss(RecommenderSystemLoss):
             return sampled_loss.sum()
         elif self.aggregator == 'mean':
             return sampled_loss.mean()
+
+    def compute_weighted_loss(self, logits: torch.Tensor, labels: torch.Tensor, weights: torch.Tensor):
+        pos_logits_sum = - logits[:, 0]
+
+        if self.train_neg_strategy == 'uniform':
+            logits[:, 1:] += math.log(self.n_items / self.neg_train)
+        log_sum_exp_sum = torch.logsumexp(logits, dim=-1)
+
+        sampled_loss = pos_logits_sum + log_sum_exp_sum
+        weighted_sample_loss = sampled_loss * weights
+
+        if self.aggregator == 'sum':
+            return weighted_sample_loss.sum()
+        elif self.aggregator == 'mean':
+            return weighted_sample_loss.mean()
 
 
 class RecommenderSystemLossesEnum(Enum):

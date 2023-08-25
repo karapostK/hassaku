@@ -32,17 +32,18 @@ def tune_training(conf: dict):
     alg = AlgorithmsEnum[conf['alg']]
 
     if issubclass(alg.value, SGDBasedRecommenderAlgorithm):
-        train_loader = get_dataloader(conf, 'train')
+        train_loader = get_dataloader(conf, 'train', **conf['hyperparameter_settings'])
         val_loader = get_dataloader(conf, 'val')
 
         alg = alg.value.build_from_conf(conf, train_loader.dataset)
 
         # Validation happens within the Trainer
-        trainer = Trainer(alg, train_loader, val_loader, conf)
+        trainer = Trainer(alg, train_loader, val_loader, conf, **conf['hyperparameter_settings'])
         metrics_values = trainer.fit()
 
     elif issubclass(alg.value, SparseMatrixBasedRecommenderAlgorithm):
         train_dataset = TrainRecDataset(conf['dataset_path'])
+        train_dataset.prepare_data()
         val_loader = get_dataloader(conf, 'val')
 
         alg = alg.value.build_from_conf(conf, train_dataset)
@@ -62,6 +63,7 @@ def tune_training(conf: dict):
                       "hyperparameters. Are you sure of what you are doing?")
 
         train_dataset = TrainRecDataset(conf['dataset_path'])
+        train_dataset.prepare_data()
         val_loader = get_dataloader(conf, 'val')
 
         alg = alg.value.build_from_conf(conf, train_dataset)
@@ -92,6 +94,7 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, data_path: str, **
     # Adding default parameters if not set
     conf = parse_conf(conf, alg, dataset)
     time_run = conf['time_run']
+    seed = conf['running_settings']['seed']
 
     # Hyperparameter Optimization
     # The actual optimizing metric should be set in conf_parser.py and not here.
@@ -100,17 +103,18 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, data_path: str, **
     optimizing_metric = 'max_optimizing_metric'
 
     # Search Algorithm
-    search_alg = HyperOptSearch(random_state_seed=conf['running_settings']['seed'])
+    search_alg = HyperOptSearch(random_state_seed=seed)
 
     # Logger
-    tags = [alg.name, dataset.name, time_run, 'hyper']
+    tags = [alg.name, dataset.name, time_run, 'hyper', str(seed)]
     if hyperparameter_settings['tags']:
         tags += hyperparameter_settings['tags']
 
     log_callback = WandbLoggerCallback(project=PROJECT_NAME, log_config=True, api_key_file=WANDB_API_KEY_PATH,
-                                       job_type='hyper - train/val',
+                                       job_type=f'hyper - train/val',
                                        tags=tags,
-                                       entity=ENTITY_NAME, group=f'{alg.name} - {dataset.name} - hyper - train/val')
+                                       entity=ENTITY_NAME,
+                                       group=f'{alg.name} - {dataset.name} - hyper - train/val - {str(seed)}')
 
     # Saving the models only for the best n_tops models.
     keep_callback = KeepOnlyTopModels(optimizing_metric, n_tops=3)
@@ -158,10 +162,6 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, data_path: str, **
     print(f'Best checkpoint is: \n {best_checkpoint}')
 
     return best_config, best_checkpoint
-    # # Logging info to file for easier post-processing
-    # keep_callback.log_bests(os.path.expanduser(os.path.join('~/ray_results', experiment_name)))
-    #
-    # return best_config, best_checkpoint
 
 
 def run_test(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: dict, **kwargs):
@@ -170,19 +170,24 @@ def run_test(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: dict, **kwargs):
     """
     print('Starting Test')
     time_run = conf['time_run']
+    seed = conf['running_settings']['seed']
 
-    tags = [alg.name, dataset.name, time_run, 'hyper']
+    tags = [alg.name, dataset.name, time_run, 'hyper', str(seed)]
     if kwargs['tags']:
         tags += kwargs['tags']
     wandb.init(project=PROJECT_NAME, entity=ENTITY_NAME, config=conf,
                tags=tags,
-               group=f'{alg.name} - {dataset.name} - hyper - test', name=time_run, job_type='hyper - test', reinit=True)
+               group=f'{alg.name} - {dataset.name} - hyper - test - {str(seed)}', name=time_run,
+               job_type='hyper - test',
+               reinit=True)
 
     test_loader = get_dataloader(conf, 'test')
 
     if alg.value == PopularItems:
         # Popular Items requires the popularity distribution over the items learned over the training data
-        alg = alg.value.build_from_conf(conf, TrainRecDataset(conf['dataset_path']))
+        train_dataset = TrainRecDataset(conf['dataset_path'])
+        train_dataset.prepare_data()
+        alg = alg.value.build_from_conf(conf, train_dataset)
     else:
         alg = alg.value.build_from_conf(conf, test_loader.dataset)
 

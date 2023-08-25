@@ -13,7 +13,7 @@ from utilities.utils import reproducible
 from wandb_conf import PROJECT_NAME, ENTITY_NAME
 
 
-def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union[str, dict]):
+def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union[str, dict], **kwargs):
     print('Starting Train-Val')
     print(f'Algorithm is {alg.name} - Dataset is {dataset.name}')
 
@@ -29,18 +29,19 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union
 
     if issubclass(alg.value, SGDBasedRecommenderAlgorithm):
 
-        train_loader = get_dataloader(conf, 'train')
+        train_loader = get_dataloader(conf, 'train', **kwargs)
         val_loader = get_dataloader(conf, 'val')
 
         alg = alg.value.build_from_conf(conf, train_loader.dataset)
 
         # Validation happens within the Trainer
-        trainer = Trainer(alg, train_loader, val_loader, conf)
+        trainer = Trainer(alg, train_loader, val_loader, conf, **kwargs)
         metrics_values = trainer.fit()
         save_yaml(conf['model_path'], conf)
 
     elif issubclass(alg.value, SparseMatrixBasedRecommenderAlgorithm):
         train_dataset = TrainRecDataset(conf['dataset_path'])
+        train_dataset.prepare_data()
         val_loader = get_dataloader(conf, 'val')
 
         alg = alg.value.build_from_conf(conf, train_dataset)
@@ -57,6 +58,7 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union
     elif alg in [AlgorithmsEnum.rand, AlgorithmsEnum.pop]:
 
         train_dataset = TrainRecDataset(conf['dataset_path'])
+        train_dataset.prepare_data()
         val_loader = get_dataloader(conf, 'val')
 
         alg = alg.value.build_from_conf(conf, train_dataset)
@@ -90,7 +92,9 @@ def run_test(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union[str,
 
     if alg.value == PopularItems:
         # Popular Items requires the popularity distribution over the items learned over the training data
-        alg = alg.value.build_from_conf(conf, TrainRecDataset(conf['dataset_path']))
+        train_dataset = TrainRecDataset(conf['dataset_path'])
+        train_dataset.prepare_data()
+        alg = alg.value.build_from_conf(conf, train_dataset)
     else:
         alg = alg.value.build_from_conf(conf, test_loader.dataset)
 
@@ -102,11 +106,11 @@ def run_test(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union[str,
         wandb.finish()
 
 
-def run_train_val_test(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf_path: str):
+def run_train_val_test(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf_path: str, **kwargs):
     print('Starting Train-Val-Test')
     print(f'Algorithm is {alg.name} - Dataset is {dataset.name}')
 
     # ------ Run train and Val ------ #
-    metrics_values, conf = run_train_val(alg, dataset, conf_path)
+    metrics_values, conf = run_train_val(alg, dataset, conf_path, **kwargs)
     # ------ Run test ------ #
     run_test(alg, dataset, conf)

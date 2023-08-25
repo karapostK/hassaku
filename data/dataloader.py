@@ -114,4 +114,12 @@ class TrainDataLoader(DataLoader):
         items_idxs = np.column_stack([item_pos_idxs, item_neg_idxs]).astype(np.int64)
         labels = np.zeros_like(items_idxs, dtype=float)
         labels[:, 0] = 1.
-        return torch.from_numpy(user_idxs), torch.from_numpy(items_idxs), torch.from_numpy(labels)
+
+        if len(batch[0]) == 4:
+            return torch.from_numpy(user_idxs), torch.from_numpy(items_idxs), torch.from_numpy(
+                np.array([x[2] for x in batch])), torch.from_numpy(
+                labels)
+        else:
+
+            return torch.from_numpy(user_idxs), torch.from_numpy(items_idxs), torch.from_numpy(
+                labels)

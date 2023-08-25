@@ -78,7 +78,7 @@ class FullEvaluator:
                 self.n_entries[group_idx] += group_n_entries[group_idx]
 
     def get_results(self):
-        metrics_dict = dict()
+        metrics_dict = defaultdict(float) if self.aggr_by_group else defaultdict(list)
         for group_idx in self.group_metrics:
             for metric_name in self.group_metrics[group_idx]:
                 if group_idx != -1:
@@ -91,6 +91,21 @@ class FullEvaluator:
                 else:
                     metrics_dict[final_metric_name] = torch.stack(
                         self.group_metrics[group_idx][metric_name]).cpu().numpy()
+
+        group_masses = np.array([v for k, v in self.n_entries.items() if k != 1])
+        group_weights = max(group_masses) / group_masses
+        den = (group_weights * group_masses).sum()
+
+        for metric_name in self.group_metrics[-1]:
+            final_metric_name = 'weighted_' + metric_name
+            for group_idx in self.group_metrics:
+                if group_idx == -1:
+                    continue
+                if self.aggr_by_group:
+                    metrics_dict[final_metric_name] += (self.group_metrics[group_idx][metric_name] * group_weights[
+                        group_idx]) / den
+                else:
+                    raise ValueError("Not yet implemented!")
 
         self._reset_internal_dict()
 

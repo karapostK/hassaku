@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from data.dataloader import TrainDataLoader, NegativeSampler
-from data.dataset import TrainRecDataset, FullEvalDataset
+from data.dataset import TrainRecDataset, FullEvalDataset, TrainRecDatasetUserGroupWeight
 
 LOG_FILT_DATA_PATH = "log_filtering_data.txt"
 
@@ -268,13 +268,20 @@ def split_random_order_ratio_based(lhs: pd.DataFrame, ratios=(0.8, 0.1, 0.1), se
     return lhs, train_data, val_data, test_data
 
 
-def get_dataloader(conf: dict, split_set: str) -> DataLoader:
+def get_dataloader(conf: dict, split_set: str, **kwargs) -> DataLoader:
     """
         Returns the dataloader associated to the configuration in conf
     """
 
     if split_set == 'train':
-        train_dataset = TrainRecDataset(data_path=conf['dataset_path'])
+        fair_method = kwargs.get('fair_method', 'none')
+        if fair_method == 'none':
+            train_dataset = TrainRecDataset(data_path=conf['dataset_path'])
+        elif fair_method == 'weight_train' or fair_method == 'weight_train_val':
+            train_dataset = TrainRecDatasetUserGroupWeight(data_path=conf['dataset_path'])
+        else:
+            raise ValueError('Fair method not implemented')
+        train_dataset.prepare_data()
         sampler = NegativeSampler(
             train_dataset=train_dataset,
             n_neg=conf['neg_train'],
@@ -294,22 +301,26 @@ def get_dataloader(conf: dict, split_set: str) -> DataLoader:
                      f"- n_workers: {conf['running_settings']['n_workers']} \n")
 
     elif split_set == 'val':
+        eval_dataset = FullEvalDataset(
+            data_path=conf['dataset_path'],
+            split_set='val',
+        )
+        eval_dataset.prepare_data()
         dataloader = DataLoader(
-            FullEvalDataset(
-                data_path=conf['dataset_path'],
-                split_set='val',
-            ),
+            eval_dataset,
             batch_size=conf['eval_batch_size']
         )
         logging.info(f"Built Val DataLoader module \n"
                      f"- batch_size: {conf['eval_batch_size']} \n")
 
     elif split_set == 'test':
+        eval_dataset = FullEvalDataset(
+            data_path=conf['dataset_path'],
+            split_set='val',
+        )
+        eval_dataset.prepare_data()
         dataloader = DataLoader(
-            FullEvalDataset(
-                data_path=conf['dataset_path'],
-                split_set='test',
-            ),
+            eval_dataset,
             batch_size=conf['eval_batch_size']
         )
         logging.info(f"Built Test DataLoader module \n"

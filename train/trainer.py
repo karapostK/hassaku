@@ -3,7 +3,6 @@ import logging
 import torch
 import wandb
 from ray.air import session
-from torch import nn
 from torch.utils import data
 from tqdm import trange, tqdm
 
@@ -17,7 +16,7 @@ class Trainer:
     def __init__(self, model: SGDBasedRecommenderAlgorithm,
                  train_loader: data.DataLoader,
                  val_loader: data.DataLoader,
-                 conf: dict):
+                 conf: dict, **kwargs):
         """
         Train and Evaluate the model.
         :param model: Model to train
@@ -33,9 +32,6 @@ class Trainer:
 
         self.model = model
         self.pointer_to_model = self.model
-        if self.device == 'cuda':
-            self.model = nn.DataParallel(self.model)
-            self.pointer_to_model = self.model.module
         self.model.to(self.device)
 
         self.rec_loss = RecommenderSystemLossesEnum[conf['rec_loss']].value(n_items=train_loader.dataset.n_items,
@@ -57,8 +53,16 @@ class Trainer:
             raise ValueError(f"Optimizer {conf['optimizer']} not yet implemented")
 
         self.n_epochs = conf['n_epochs']
-        self.optimizing_metric = conf['optimizing_metric']
         self.max_patience = conf['max_patience']
+
+        fair_method = kwargs.get('fair_method', 'none')
+        if fair_method == 'none' or fair_method == 'weight_train':
+            self.optimizing_metric = conf['optimizing_metric']
+        elif fair_method == 'weight_train_val':
+            print('Switching to weighted')
+            self.optimizing_metric = 'weighted_' + conf['optimizing_metric']
+        else:
+            raise ValueError('Fair method not yet implemented')
 
         self.model_path = conf['model_path']
 
@@ -128,14 +132,18 @@ class Trainer:
             else:
                 iterator = self.train_loader
 
-            for u_idxs, i_idxs, labels in iterator:
-                u_idxs = u_idxs.to(self.device)
-                i_idxs = i_idxs.to(self.device)
-                labels = labels.to(self.device)
-
+            for batch in iterator:
+                u_idxs = batch[0].to(self.device)
+                i_idxs = batch[1].to(self.device)
+                labels = batch[-1].to(self.device)
                 out = self.model(u_idxs, i_idxs)
 
-                rec_loss = self.rec_loss.compute_loss(out, labels)
+                if len(batch) == 4:
+                    weights = batch[2].to(self.device)
+                    rec_loss = self.rec_loss.compute_weighted_loss(out, labels, weights)
+                else:
+                    rec_loss = self.rec_loss.compute_loss(out, labels)
+
                 reg_losses = self.pointer_to_model.get_and_reset_other_loss()
                 reg_loss = reg_losses['reg_loss'].to(rec_loss.device)
 

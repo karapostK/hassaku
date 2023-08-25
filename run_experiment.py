@@ -19,6 +19,10 @@ parser.add_argument('--run_type', '-t', type=str, choices=['train_val', 'test', 
                     help='Type of run to carry out among "Train + Val", "Test", and "Train + Val + Test"')
 parser.add_argument('--log', type=str, default='WARNING')
 
+parser.add_argument('--fair_method', '-f', type=str, choices=['none', 'weight_train', 'weight_train_val'],
+                    default='none',
+                    help='Which type of fairness strategy to adopt')
+
 args = parser.parse_args()
 
 alg = AlgorithmsEnum[args.algorithm]
@@ -26,11 +30,15 @@ dataset = DatasetsEnum[args.dataset]
 conf_path = args.conf_path
 run_type = args.run_type
 log = args.log
+fair_method = args.fair_method
+
+if fair_method != 'none':
+    print('Performing fair method')
 
 logging.basicConfig(level=log)
 if run_type == 'train_val':
-    run_train_val(alg, dataset, conf_path)
+    run_train_val(alg, dataset, conf_path, fair_method=fair_method)
 elif run_type == 'test':
     run_test(alg, dataset, conf_path)
 else:
-    run_train_val_test(alg, dataset, conf_path)
+    run_train_val_test(alg, dataset, conf_path, fair_method=fair_method)

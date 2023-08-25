@@ -1,5 +1,6 @@
 import logging
 import os
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -44,18 +45,12 @@ class RecDataset(data.Dataset):
 
         self.lhs = None
 
-        self._load_data()
-
         self.name = "RecDataset"
         logging.info(f'Built {self.name} module \n'
                      f'- data_path: {self.data_path} \n'
-                     f'- split_set: {self.split_set} \n'
-                     f'- n_users: {self.n_users} \n'
-                     f'- n_items: {self.n_items} \n'
-                     f'- n_interactions: {len(self.lhs)} \n'
-                     f'- n_user_groups: {self.n_user_groups} \n')
+                     f'- split_set: {self.split_set} \n')
 
-    def _load_data(self):
+    def prepare_data(self):
         logging.info('Loading data')
 
         user_idxs = pd.read_csv(os.path.join(self.data_path, 'user_idxs.csv'))
@@ -70,9 +65,15 @@ class RecDataset(data.Dataset):
             self.user_to_user_group = torch.Tensor(self.user_to_user_group)
 
             self.n_user_groups = user_idxs.group_idx.nunique()
+
         self.lhs = self._load_lhs(self.split_set)
 
         logging.info('End loading data')
+        logging.info(f'Loaded Data\n'
+                     f'- n_users: {self.n_users} \n'
+                     f'- n_items: {self.n_items} \n'
+                     f'- n_interactions: {len(self.lhs)} \n'
+                     f'- n_user_groups: {self.n_user_groups} \n')
 
     def _load_lhs(self, split_set: str):
         return pd.read_csv(os.path.join(self.data_path, f'listening_history_{split_set}.csv'))
@@ -111,13 +112,13 @@ class TrainRecDataset(RecDataset):
 
         self.pop_distribution = None
 
-        self._prepare_data()
-
         self.name = 'TrainRecDataset'
         logging.info(f'Built {self.name} module \n'
                      f'- delete_lhs: {self.delete_lhs} \n')
 
-    def _prepare_data(self):
+    def prepare_data(self):
+        super().prepare_data()
+
         self.iteration_matrix = sp.coo_matrix(
             (np.ones(len(self.lhs), dtype=np.int16), (self.lhs.user_idx, self.lhs.item_idx)),
             shape=(self.n_users, self.n_items))
@@ -140,6 +141,48 @@ class TrainRecDataset(RecDataset):
         return user_idx, item_idx, 1.
 
 
+class TrainRecDatasetUserGroupWeight(TrainRecDataset):
+    """
+    N.B. This class places a weight on each datapoint proportional to difference between the interaction mass among
+    user groups.
+    e.g. if Group 0 has 200.000 interactions and Group 1 has 100.000 interactions, each datapoint associated to Group 1
+    should have a weight of 2.
+    For multiple groups (2+), each datapoint belonging to a user group receives a weight in comparison with the user
+    group with the highest interaction mass in the dataset.
+    """
+
+    def __init__(self, data_path: str, delete_lhs: bool = True):
+        """
+        :param data_path: Path to the directory with listening_history_train.csv, user_idxs.csv, item_idxs.csv
+        :param delete_lhs: Whether the pandas dataframe should be deleted after creating the iteration/sampling mtxs.
+        """
+
+        super().__init__(data_path, delete_lhs)
+
+        self.group_weights = None
+
+        self.name = 'TrainRecDatasetUserGroupWeight'
+        logging.info(f'Built {self.name} module \n')
+
+    def prepare_data(self):
+        super().prepare_data()
+        group_masses = np.empty(self.n_user_groups)
+        for group_idx in range(self.n_user_groups):
+            group_indices = np.where(self.user_to_user_group == group_idx)
+            group_mass = self.sampling_matrix[group_indices].sum()
+            group_masses[group_idx] = group_mass
+        self.group_weights = max(group_masses) / group_masses
+
+    def __len__(self):
+        return self.iteration_matrix.nnz
+
+    def __getitem__(self, index):
+        user_idx = self.iteration_matrix.row[index].astype('int64')
+        item_idx = self.iteration_matrix.col[index].astype('int64')
+        weight = self.group_weights[self.user_to_user_group[user_idx].long()]
+        return user_idx, item_idx, weight, 1.
+
+
 class FullEvalDataset(RecDataset):
     """
     Dataset to hold Recommender System data and evaluate collaborative filtering algorithms. It allows iteration over
@@ -149,29 +192,31 @@ class FullEvalDataset(RecDataset):
     During test, items in the training data and validation for a user are excluded as labels
     """
 
-    def __init__(self, data_path: str, split_set: str, delete_lhs: bool = True):
+    def __init__(self, data_path: str, split_set: str, avoid_empty_users: bool = True, delete_lhs: bool = True):
         """
         :param data_path: Path to the directory with listening_history_{val,test}.csv, user_idxs.csv, item_idxs.csv
         :param split_set: Either 'val' or 'test'
+        :param avoid_empty_users: Whether to skip evaluation on users which have no val/test data.
         :param delete_lhs: Whether the pandas dataframe should be deleted after creating the iteration/sampling mtxs.
         """
 
         super().__init__(data_path, split_set)
 
         self.delete_lhs = delete_lhs
+        self.avoid_empty_users = avoid_empty_users
 
         self.idx_to_user = None
         self.iteration_matrix = None
         self.exclude_data = None
 
-        self._prepare_data()
-
         self.name = 'FullEvalDataset'
 
         logging.info(f'Built {self.name} module \n'
+                     f'- avoid_empty_users: {self.avoid_empty_users} \n'
                      f'- delete_lhs: {self.delete_lhs} \n')
 
-    def _prepare_data(self):
+    def prepare_data(self):
+        super().prepare_data()
         self.iteration_matrix = sp.csr_matrix(
             (np.ones(len(self.lhs), dtype=np.int16), (self.lhs.user_idx, self.lhs.item_idx)),
             shape=(self.n_users, self.n_items))
@@ -190,13 +235,30 @@ class FullEvalDataset(RecDataset):
                 shape=(self.n_users, self.n_items)
             )
 
+        if self.avoid_empty_users:
+            items_per_users = self.iteration_matrix.getnnz(axis=-1)
+            self.idx_to_user = np.where(items_per_users > 0)[0]
+
+            #if self.n_user_groups > 0:
+            #    self.user_to_user_group = torch.Tensor(self.user_to_user_group[self.idx_to_user])
+            #    self.n_user_groups = len(np.unique(self.user_to_user_group))
+
         if self.delete_lhs:
             del self.lhs
 
     def __len__(self):
-        return self.n_users
+        if self.avoid_empty_users:
+            n_non_empty_users = len(self.idx_to_user)
+            if n_non_empty_users != self.n_users:
+                warnings.warn("Note that the number of non-empty user is different from the users of the system."
+                              "This might cause mistakes when aggregating the results or indexing the results.")
+            return n_non_empty_users
+        else:
+            return self.n_users
 
     def __getitem__(self, user_index):
+        if self.avoid_empty_users:
+            user_index = self.idx_to_user[user_index]
         return user_index, np.arange(self.n_items), self.iteration_matrix[user_index].toarray().squeeze().astype(
             'float32')
 
