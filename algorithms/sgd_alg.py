@@ -226,7 +226,7 @@ class ACF(SGDBasedRecommenderAlgorithm):
 
         # Exclusiveness constraint
         exc_values = entropy_from_softmax(c_i, c_i_unnorm)  # [batch_size, n_neg +1] or [batch_size]
-        exc_loss = exc_values.sum()
+        exc_loss = exc_values.mean()
 
         # Inclusiveness constraint
         c_i_flat = c_i.reshape(-1, self.n_anchors)  # [*, n_anchors]
