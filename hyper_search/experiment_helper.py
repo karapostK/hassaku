@@ -92,6 +92,7 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, data_path: str, **
     # Adding default parameters if not set
     conf = parse_conf(conf, alg, dataset)
     time_run = conf['time_run']
+    seed = conf['running_settings']['seed']
 
     # Hyperparameter Optimization
     # The actual optimizing metric should be set in conf_parser.py and not here.
@@ -100,10 +101,10 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, data_path: str, **
     optimizing_metric = 'max_optimizing_metric'
 
     # Search Algorithm
-    search_alg = HyperOptSearch(random_state_seed=conf['running_settings']['seed'])
+    search_alg = HyperOptSearch(random_state_seed=seed)
 
     # Logger
-    tags = [alg.name, dataset.name, time_run, 'hyper']
+    tags = [alg.name, dataset.name, time_run, 'hyper', f'seed_{seed}']
     if hyperparameter_settings['tags']:
         tags += hyperparameter_settings['tags']
 
@@ -158,10 +159,6 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, data_path: str, **
     print(f'Best checkpoint is: \n {best_checkpoint}')
 
     return best_config, best_checkpoint
-    # # Logging info to file for easier post-processing
-    # keep_callback.log_bests(os.path.expanduser(os.path.join('~/ray_results', experiment_name)))
-    #
-    # return best_config, best_checkpoint
 
 
 def run_test(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: dict, **kwargs):
@@ -170,8 +167,9 @@ def run_test(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: dict, **kwargs):
     """
     print('Starting Test')
     time_run = conf['time_run']
+    seed = conf['running_settings']['seed']
 
-    tags = [alg.name, dataset.name, time_run, 'hyper']
+    tags = [alg.name, dataset.name, time_run, 'hyper', f'seed_{seed}']
     if kwargs['tags']:
         tags += kwargs['tags']
     wandb.init(project=PROJECT_NAME, entity=ENTITY_NAME, config=conf,
