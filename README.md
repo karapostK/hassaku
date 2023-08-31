@@ -147,4 +147,4 @@ alg_data_param = {
 
 Optionally, you can set the number of sampled configurations by `-ns` (e.g., `-ns 50`), cpus and gpus for each trial, <=1 values are allowed, using `-ncpu -ngpu` (e.g., `-ncpu 1 -ngpu 0.2`), and the number of concurrent trial with `-nc` (e.g., `-nc 3`).
 
-4) Track all of your trails on wandb
+4) Track all of your trials on wandb
