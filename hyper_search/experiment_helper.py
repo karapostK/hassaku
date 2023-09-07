@@ -128,16 +128,15 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, data_path: str, **
     )
 
     run_config = air.RunConfig(
-        local_dir=f'./hyper_saved_models/{alg.name}-{dataset.name}',
+        storage_path=f'./hyper_saved_models/{alg.name}-{dataset.name}',
         name=time_run,
         callbacks=[log_callback, keep_callback],
         failure_config=air.FailureConfig(max_failures=3),
-        verbose=0,
+        verbose=conf['running_settings']['ray_verbose'],
     )
 
     # Setting up the resources per trial
-    n_workers = conf['running_settings'].get('n_workers', 0)
-    dict_resources = {'cpu': hyperparameter_settings['n_cpus'] * (1 + n_workers)}
+    dict_resources = {'cpu': hyperparameter_settings['n_cpus']}
     if hyperparameter_settings['n_gpus'] > 0:
         dict_resources['gpu'] = hyperparameter_settings['n_gpus']
     tune_training_with_resources = tune.with_resources(tune_training, dict_resources)

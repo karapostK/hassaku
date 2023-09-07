@@ -14,7 +14,9 @@ all_dataset_common_param = {
     'max_patience': MAX_PATIENCE,
     'running_settings':
         {
-            'n_workers': 0
+            'n_workers_train': 2,
+            'n_workers_eval': 0,
+            'ray_verbose': 1
         },
 }
 

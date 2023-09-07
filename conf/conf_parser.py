@@ -13,7 +13,8 @@ DEF_NEG_TRAIN = 4
 DEF_NEG_STRATEGY = 'uniform'
 DEF_TRAIN_BATCH_SIZE = 64
 DEF_EVAL_BATCH_SIZE = 64
-DEF_NUM_WORKERS = 2
+DEF_NUM_WORKERS_TRAIN = 2
+DEF_NUM_WORKERS_EVAL = 2
 DEF_SEED = 64
 DEF_N_EPOCHS = 50
 DEF_USE_WANDB = True
@@ -26,6 +27,7 @@ DEF_LOSS_AGGREGATOR = 'mean'
 DEF_DEVICE = 'cpu'
 DEF_OPTIMIZING_METRIC = 'ndcg@10'
 DEF_BATCH_VERBOSE = False
+DEF_RAY_VERBOSE = 1
 
 
 def parse_conf_file(conf_path: str) -> dict:
@@ -96,6 +98,10 @@ def parse_conf(conf: dict, alg: AlgorithmsEnum, dataset: DatasetsEnum) -> dict:
         conf['running_settings']['use_wandb'] = DEF_USE_WANDB
         added_parameters_list.append(f"use_wandb={conf['running_settings']['use_wandb']}")
 
+    if use_tune and 'ray_verbose' not in conf['running_settings']:
+        conf['running_settings']['ray_verbose'] = DEF_RAY_VERBOSE
+        added_parameters_list.append(f"ray_verbose={conf['running_settings']['ray_verbose']}")
+
     if issubclass(alg.value, SGDBasedRecommenderAlgorithm):
         if 'neg_train' not in conf:
             conf['neg_train'] = DEF_NEG_TRAIN
@@ -118,20 +124,20 @@ def parse_conf(conf: dict, alg: AlgorithmsEnum, dataset: DatasetsEnum) -> dict:
         if 'lr' not in conf:
             conf['lr'] = DEF_LEARNING_RATE
             added_parameters_list.append(f"lr={conf['lr']}")
-        #else:
-         #   assert conf['lr'] > 0, f"Learning rate ({conf['lr']}) should be positive"
+        # else:
+        #   assert conf['lr'] > 0, f"Learning rate ({conf['lr']}) should be positive"
 
         if 'wd' not in conf:
             conf['wd'] = DEF_WEIGHT_DECAY
             added_parameters_list.append(f"wd={conf['wd']}")
-        #else:
-         #   assert conf['wd'] >= 0, f"Weight Decay ({conf['wd']}) should be positive"
+        # else:
+        #   assert conf['wd'] >= 0, f"Weight Decay ({conf['wd']}) should be positive"
 
         if 'optimizer' not in conf:
             conf['optimizer'] = DEF_OPTIMIZER
             added_parameters_list.append(f"optimizer={conf['optimizer']}")
         else:
-            assert conf['optimizer'] in ['adam', 'adagrad','adamw'], f"Optimizer ({conf['optimizer']}) not implemented"
+            assert conf['optimizer'] in ['adam', 'adagrad', 'adamw'], f"Optimizer ({conf['optimizer']}) not implemented"
 
         if 'rec_loss' not in conf:
             conf['rec_loss'] = DEF_REC_LOSS
@@ -161,16 +167,21 @@ def parse_conf(conf: dict, alg: AlgorithmsEnum, dataset: DatasetsEnum) -> dict:
             assert 0 < conf['max_patience'] < conf[
                 'n_epochs'], f"Max patience {conf['max_patience']} should be between 0 and {conf['n_epochs']}"
 
-        if 'n_workers' not in conf['running_settings']:
-            conf['running_settings']['n_workers'] = DEF_NUM_WORKERS
-            added_parameters_list.append(f"n_workers={conf['running_settings']['n_workers']}")
+        if 'n_workers_train' not in conf['running_settings']:
+            conf['running_settings']['n_workers_train'] = DEF_NUM_WORKERS_TRAIN
+            added_parameters_list.append(f"n_workers_train={conf['running_settings']['n_workers_train']}")
+
+        if 'n_workers_eval' not in conf['running_settings']:
+            conf['running_settings']['n_workers_eval'] = DEF_NUM_WORKERS_EVAL
+            added_parameters_list.append(f"n_workers_eval={conf['running_settings']['n_workers_eval']}")
 
         if 'batch_verbose' not in conf['running_settings']:
             conf['running_settings']['batch_verbose'] = DEF_BATCH_VERBOSE
             added_parameters_list.append(f"batch_verbose={conf['running_settings']['batch_verbose']}")
 
+
+
     print('Added these default parameters: ', ", ".join(added_parameters_list))
     print('For more detail, see conf/conf_parser.py')
-    print('\n\n')
 
     return conf
