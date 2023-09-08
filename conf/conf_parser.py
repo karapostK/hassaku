@@ -13,8 +13,8 @@ DEF_NEG_TRAIN = 4
 DEF_NEG_STRATEGY = 'uniform'
 DEF_TRAIN_BATCH_SIZE = 64
 DEF_EVAL_BATCH_SIZE = 64
-DEF_NUM_WORKERS_TRAIN = 2
-DEF_NUM_WORKERS_EVAL = 2
+DEF_TRAIN_NUM_WORKERS = 2
+DEF_EVAL_NUM_WORKERS = 2
 DEF_SEED = 64
 DEF_N_EPOCHS = 50
 DEF_USE_WANDB = True
@@ -167,13 +167,13 @@ def parse_conf(conf: dict, alg: AlgorithmsEnum, dataset: DatasetsEnum) -> dict:
             assert 0 < conf['max_patience'] < conf[
                 'n_epochs'], f"Max patience {conf['max_patience']} should be between 0 and {conf['n_epochs']}"
 
-        if 'n_workers_train' not in conf['running_settings']:
-            conf['running_settings']['n_workers_train'] = DEF_NUM_WORKERS_TRAIN
-            added_parameters_list.append(f"n_workers_train={conf['running_settings']['n_workers_train']}")
+        if 'train_n_workers' not in conf['running_settings']:
+            conf['running_settings']['train_n_workers'] = DEF_TRAIN_NUM_WORKERS
+            added_parameters_list.append(f"train_n_workers={conf['running_settings']['train_n_workers']}")
 
-        if 'n_workers_eval' not in conf['running_settings']:
-            conf['running_settings']['n_workers_eval'] = DEF_NUM_WORKERS_EVAL
-            added_parameters_list.append(f"n_workers_eval={conf['running_settings']['n_workers_eval']}")
+        if 'eval_n_workers' not in conf['running_settings']:
+            conf['running_settings']['eval_n_workers'] = DEF_EVAL_NUM_WORKERS
+            added_parameters_list.append(f"eval_n_workers={conf['running_settings']['eval_n_workers']}")
 
         if 'batch_verbose' not in conf['running_settings']:
             conf['running_settings']['batch_verbose'] = DEF_BATCH_VERBOSE

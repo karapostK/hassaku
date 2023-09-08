@@ -285,13 +285,13 @@ def get_dataloader(conf: dict, split_set: str) -> DataLoader:
             train_dataset,
             batch_size=conf['train_batch_size'],
             shuffle=True,
-            num_workers=conf['running_settings']['n_workers_train'],
+            num_workers=conf['running_settings']['train_n_workers'],
             prefetch_factor=conf['running_settings']['prefetch_factor'] if 'prefetch_factor' in conf[
                 'running_settings'] else 2
         )
         logging.info(f"Built Train DataLoader module \n"
                      f"- batch_size: {conf['train_batch_size']} \n"
-                     f"- n_workers_train: {conf['running_settings']['n_workers_train']} \n")
+                     f"- train_n_workers: {conf['running_settings']['train_n_workers']} \n")
 
     elif split_set == 'val':
         dataloader = DataLoader(
@@ -300,11 +300,11 @@ def get_dataloader(conf: dict, split_set: str) -> DataLoader:
                 split_set='val',
             ),
             batch_size=conf['eval_batch_size'],
-            num_workers=conf['running_settings']['n_workers_eval'],
+            num_workers=conf['running_settings']['eval_n_workers'],
         )
         logging.info(f"Built Val DataLoader module \n"
                      f"- batch_size: {conf['eval_batch_size']} \n"
-                     f"- n_workers_eval: {conf['running_settings']['n_workers_eval']} \n")
+                     f"- eval_n_workers: {conf['running_settings']['eval_n_workers']} \n")
 
     elif split_set == 'test':
         dataloader = DataLoader(
@@ -313,11 +313,11 @@ def get_dataloader(conf: dict, split_set: str) -> DataLoader:
                 split_set='test',
             ),
             batch_size=conf['eval_batch_size'],
-            num_workers=conf['running_settings']['n_workers_eval'],
+            num_workers=conf['running_settings']['eval_n_workers'],
         )
         logging.info(f"Built Test DataLoader module \n"
                      f"- batch_size: {conf['eval_batch_size']} \n"
-                     f"- n_workers_eval: {conf['running_settings']['n_workers_eval']} \n")
+                     f"- eval_n_workers: {conf['running_settings']['eval_n_workers']} \n")
     else:
         raise ValueError(f"split_set value '{split_set}' is invalid! Please choose from [train, val, test]")
     return dataloader
