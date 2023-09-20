@@ -3,6 +3,7 @@ from collections import defaultdict
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm, RecommenderAlgorithm
 from eval.eval_utils import K_VALUES
@@ -97,7 +98,7 @@ class FullEvaluator:
         return metrics_dict
 
 
-def evaluate_recommender_algorithm(alg: RecommenderAlgorithm, eval_loader: DataLoader, device='cpu'):
+def evaluate_recommender_algorithm(alg: RecommenderAlgorithm, eval_loader: DataLoader, device='cpu', verbose=False):
     """
     Evaluation procedure that calls FullEvaluator on the dataset.
     """
@@ -105,8 +106,13 @@ def evaluate_recommender_algorithm(alg: RecommenderAlgorithm, eval_loader: DataL
     evaluator = FullEvaluator(aggr_by_group=True, n_groups=eval_loader.dataset.n_user_groups,
                               user_to_user_group=eval_loader.dataset.user_to_user_group)
 
+    if verbose:
+        iterator = tqdm(eval_loader)
+    else:
+        iterator = eval_loader
+
     if not isinstance(alg, SGDBasedRecommenderAlgorithm):
-        for u_idxs, i_idxs, labels in eval_loader:
+        for u_idxs, i_idxs, labels in iterator:
             u_idxs = u_idxs.to(device)
             i_idxs = i_idxs.to(device)
             labels = labels.to(device)
@@ -121,21 +127,22 @@ def evaluate_recommender_algorithm(alg: RecommenderAlgorithm, eval_loader: DataL
 
             evaluator.eval_batch(u_idxs, out, labels)
     else:
-        # We generate the item representation once (usually the bottleneck of evaluation)
-        i_idxs = torch.arange(eval_loader.dataset.n_items).to(device)
-        i_repr = alg.get_item_representations(i_idxs)
+        with torch.no_grad():
+            # We generate the item representation once (usually the bottleneck of evaluation)
+            i_idxs = torch.arange(eval_loader.dataset.n_items).to(device)
+            i_repr = alg.get_item_representations(i_idxs)
 
-        for u_idxs, _, labels in eval_loader:
-            u_idxs = u_idxs.to(device)
-            labels = labels.to(device)
+            for u_idxs, _, labels in iterator:
+                u_idxs = u_idxs.to(device)
+                labels = labels.to(device)
 
-            u_repr = alg.get_user_representations(u_idxs)
-            out = alg.combine_user_item_representations(u_repr, i_repr)
+                u_repr = alg.get_user_representations(u_idxs)
+                out = alg.combine_user_item_representations(u_repr, i_repr)
 
-            batch_mask = torch.tensor(eval_loader.dataset.exclude_data[u_idxs.cpu()].A)
-            out[batch_mask] = -torch.inf
+                batch_mask = torch.tensor(eval_loader.dataset.exclude_data[u_idxs.cpu()].A)
+                out[batch_mask] = -torch.inf
 
-            evaluator.eval_batch(u_idxs, out, labels)
+                evaluator.eval_batch(u_idxs, out, labels)
 
     metrics_values = evaluator.get_results()
 

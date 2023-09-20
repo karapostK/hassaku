@@ -196,5 +196,6 @@ class Trainer:
         self.model.eval()
         print('Validation started')
 
-        metrics_values = evaluate_recommender_algorithm(self.pointer_to_model, self.val_loader, self.device)
+        metrics_values = evaluate_recommender_algorithm(self.pointer_to_model, self.val_loader, self.device,
+                                                        self.batch_verbose)
         return metrics_values

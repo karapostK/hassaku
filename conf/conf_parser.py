@@ -102,6 +102,14 @@ def parse_conf(conf: dict, alg: AlgorithmsEnum, dataset: DatasetsEnum) -> dict:
         conf['running_settings']['ray_verbose'] = DEF_RAY_VERBOSE
         added_parameters_list.append(f"ray_verbose={conf['running_settings']['ray_verbose']}")
 
+    if 'eval_n_workers' not in conf['running_settings']:
+        conf['running_settings']['eval_n_workers'] = DEF_EVAL_NUM_WORKERS
+        added_parameters_list.append(f"eval_n_workers={conf['running_settings']['eval_n_workers']}")
+
+    if 'batch_verbose' not in conf['running_settings']:
+        conf['running_settings']['batch_verbose'] = DEF_BATCH_VERBOSE
+        added_parameters_list.append(f"batch_verbose={conf['running_settings']['batch_verbose']}")
+
     if issubclass(alg.value, SGDBasedRecommenderAlgorithm):
         if 'neg_train' not in conf:
             conf['neg_train'] = DEF_NEG_TRAIN
@@ -170,16 +178,6 @@ def parse_conf(conf: dict, alg: AlgorithmsEnum, dataset: DatasetsEnum) -> dict:
         if 'train_n_workers' not in conf['running_settings']:
             conf['running_settings']['train_n_workers'] = DEF_TRAIN_NUM_WORKERS
             added_parameters_list.append(f"train_n_workers={conf['running_settings']['train_n_workers']}")
-
-        if 'eval_n_workers' not in conf['running_settings']:
-            conf['running_settings']['eval_n_workers'] = DEF_EVAL_NUM_WORKERS
-            added_parameters_list.append(f"eval_n_workers={conf['running_settings']['eval_n_workers']}")
-
-        if 'batch_verbose' not in conf['running_settings']:
-            conf['running_settings']['batch_verbose'] = DEF_BATCH_VERBOSE
-            added_parameters_list.append(f"batch_verbose={conf['running_settings']['batch_verbose']}")
-
-
 
     print('Added these default parameters: ', ", ".join(added_parameters_list))
     print('For more detail, see conf/conf_parser.py')
