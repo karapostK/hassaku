@@ -1,16 +1,12 @@
-import typing
-
 import wandb
 from algorithms.algorithms_utils import AlgorithmsEnum
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm, SparseMatrixBasedRecommenderAlgorithm
-from algorithms.naive_algs import PopularItems
-from conf.conf_parser import parse_conf_file, parse_conf, save_yaml
+from conf.conf_parser import parse_conf, save_yaml
 from data.data_utils import DatasetsEnum, get_dataloader
 from data.dataset import TrainRecDataset
 from eval.eval import evaluate_recommender_algorithm
 from train.trainer import Trainer
 from utilities.utils import reproducible
-from wandb_conf import PROJECT_NAME, ENTITY_NAME
 
 
 def train_val_agent():

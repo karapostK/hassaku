@@ -1,14 +1,16 @@
+import inspect
 import logging
 import math
 from typing import Union, Tuple, Dict
 
 import torch
+from scipy import sparse as sp
 from torch import nn
 from torch.nn import functional as F
 from torch.utils import data
 
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm, RecommenderAlgorithm
-from explanations.utils import protomf_post_val, protomfs_post_val
+from explanations.utils import protomfs_post_val, protomf_post_val_light
 from train.utils import general_weight_init
 
 
@@ -281,7 +283,7 @@ class ACF(SGDBasedRecommenderAlgorithm):
                    conf['delta_exc'], conf['delta_inc'])
 
     def post_val(self, curr_epoch: int):
-        return protomf_post_val(
+        return protomf_post_val_light(
             self.anchors,
             self.item_embed.weight,
             compute_cosine_sim,
@@ -376,7 +378,7 @@ class UProtoMF(SGDBasedRecommenderAlgorithm):
                         conf['sim_proto_weight'], conf['sim_batch_weight'])
 
     def post_val(self, curr_epoch: int):
-        return protomf_post_val(
+        return protomf_post_val_light(
             self.prototypes,
             self.user_embed.weight,
             compute_shifted_cosine_sim,
@@ -473,7 +475,7 @@ class IProtoMF(SGDBasedRecommenderAlgorithm):
                         conf['sim_proto_weight'], conf['sim_batch_weight'])
 
     def post_val(self, curr_epoch: int):
-        return protomf_post_val(
+        return protomf_post_val_light(
             self.prototypes,
             self.item_embed.weight,
             compute_shifted_cosine_sim,
@@ -819,3 +821,189 @@ class UIProtoMFsCombine(RecommenderAlgorithm):
 
     def predict(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
         return self.uprotomfs.predict(u_idxs, i_idxs) + self.iprotomfs.predict(u_idxs, i_idxs)
+
+
+class ExplainableCollaborativeFiltering(SGDBasedRecommenderAlgorithm):
+    """
+    Implements the ECF model from https://dl.acm.org/doi/10.1145/3543507.3583303
+    """
+
+    def __init__(self, n_users: int, n_items: int, tag_matrix: sp.csr_matrix, interaction_matrix: sp.csr_matrix,
+                 embedding_dim: int = 100,
+                 n_clusters: int = 64, top_n: int = 20,
+                 top_m: int = 20, temp_masking: float = 2., temp_tags: float = 2., top_p: int = 4, lam_cf: float = 0.6,
+                 lam_ind: float = 1., lam_ts: float
+                 = 1.):
+        super().__init__()
+
+        self.n_users = n_users
+        self.n_items = n_items
+        self.tag_matrix = nn.Parameter(torch.from_numpy(tag_matrix.A), requires_grad=False).float()
+        self.interaction_matrix = nn.Embedding.from_pretrained(torch.from_numpy(interaction_matrix.A).float(),
+                                                               freeze=True)
+        self.embedding_dim = embedding_dim
+        self.n_clusters = n_clusters
+        self.top_n = top_n
+        self.top_m = top_m
+        self.temp_masking = temp_masking
+        self.temp_tags = temp_tags
+        self.top_p = top_p
+
+        self.lam_cf = lam_cf
+        self.lam_ind = lam_ind
+        self.lam_ts = lam_ts
+
+        self.user_embed = nn.Embedding(self.n_users, self.embedding_dim)
+        self.item_embed = nn.Embedding(self.n_items, self.embedding_dim)
+
+        indxs = torch.randperm(self.n_items)[:self.n_clusters]
+        self.clusters = nn.Parameter(self.item_embed.weight[indxs].detach(), requires_grad=True)
+
+        self._acc_ts = 0
+        self._acc_ind = 0
+        self._acc_cf = 0
+
+        # Parameters are set every batch
+        self._x_tildes = None
+        self._xs = None
+
+        self.name = 'ECF'
+
+        logging.info(f'Built {self.name} model \n'
+                     f'- n_users: {self.n_users} \n'
+                     f'- n_items: {self.n_items} \n'
+                     f'- embedding_dim: {self.embedding_dim} \n'
+                     f'- n_clusters: {self.n_clusters} \n'
+                     f'- lam_cf: {self.lam_cf} \n'
+                     f'- top_n: {self.top_n} \n'
+                     f'- top_m: {self.top_m} \n'
+                     f'- temp_masking: {self.temp_masking} \n'
+                     f'- temp_tags: {self.temp_tags} \n'
+                     f'- top_p: {self.top_p} \n')
+
+    def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
+        i_repr = self.get_item_representations(i_idxs)
+        # NB. item representations should be generated before calling user_representations
+        u_repr = self.get_user_representations(u_idxs)
+
+        dots = self.combine_user_item_representations(u_repr, i_repr)
+
+        # Tag Loss
+        d_c = self._xs.T @ self.tag_matrix.to(u_idxs.device)  # [n_clusters, n_tags]
+        log_b_c = nn.LogSoftmax(-1)(d_c / self.temp_tags)
+        top_log_b_c = log_b_c.topk(self.top_p, dim=-1).values  # [n_clusters, top_p]
+
+        loss_tags = (- top_log_b_c).sum()
+        self._acc_ts += loss_tags
+
+        # Independence Loss
+        sim_mtx = compute_cosine_sim(self.clusters, self.clusters)
+        self_sim = torch.diag(- nn.LogSoftmax(dim=-1)(sim_mtx))
+
+        self._acc_ind += self_sim.sum()
+
+        # BPR Loss
+        u_embed = u_repr[1]
+        i_embed = i_repr[1]
+
+        logits = (u_embed.unsqueeze(-2) * i_embed).sum(dim=-1)
+
+        pos_logits = logits[:, 0].unsqueeze(1)  # [batch_size,1]
+        neg_logits = logits[:, 1:]  # [batch_size,n_neg]
+
+        diff_logits = (pos_logits - neg_logits).flatten()
+        labels = torch.ones_like(diff_logits, device=diff_logits.device)
+
+        bpr_loss = nn.BCEWithLogitsLoss()(diff_logits, labels)
+        self._acc_cf += bpr_loss
+
+        return dots
+
+    def get_user_representations(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        y_u = self.interaction_matrix(u_idxs)  # [batch_size, n_items]
+        u_embed = self.user_embed(u_idxs)
+
+        a_tilde = y_u @ self._xs  # [batch_size, n_clusters]
+
+        # Creating exact mask
+        m = torch.zeros_like(a_tilde).to(a_tilde.device)
+        a_tilde_tops = a_tilde.topk(self.top_n).indices
+        dummy_column = torch.arange(a_tilde.shape[0])[:, None].to(a_tilde.device)
+        m[dummy_column, a_tilde_tops] = True
+
+        # Creating approximated mask
+        m_tilde = nn.Softmax(dim=-1)(a_tilde / self.temp_masking)
+
+        # Putting together the masks
+        m_hat = m_tilde + (m - m_tilde).detach()
+
+        # Building affiliation vector
+        a_i = nn.Sigmoid()(a_tilde) * m_hat
+
+        return a_i, u_embed
+
+    def get_item_representations(self, i_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        self._generate_item_representations()
+
+        i_embed = self.item_embed(i_idxs)  # [batch_size, embed_dim] or [batch_size, n_neg + 1, embed_dim]
+
+        x_i = self._xs[i_idxs]
+
+        return x_i, i_embed
+
+    def _generate_item_representations(self):
+        i_embed = self.item_embed.weight  # [n_items, embed_d]
+        self._x_tildes = compute_cosine_sim(i_embed, self.clusters)  # [n_items, n_clusters]
+
+        # Creating exact mask
+        m = torch.zeros_like(self._x_tildes).to(self._x_tildes.device)
+        x_tilde_tops = self._x_tildes.topk(self.top_m).indices  # [n_items, top_m]
+        dummy_column = torch.arange(self.n_items)[:, None].to(self._x_tildes.device)
+        m[dummy_column, x_tilde_tops] = True
+
+        # Creating approximated mask
+        m_tilde = nn.Softmax(dim=-1)(self._x_tildes / self.temp_masking)  # [n_items, n_clusters]
+
+        # Putting together the masks
+        m_hat = m_tilde + (m - m_tilde).detach()
+
+        # Building affiliation vector
+        self._xs = nn.Sigmoid()(self._x_tildes) * m_hat
+
+    def combine_user_item_representations(self, u_repr: Union[torch.Tensor, Tuple[torch.Tensor, ...]],
+                                          i_repr: Union[torch.Tensor, Tuple[torch.Tensor, ...]]) -> torch.Tensor:
+        a_i, _ = u_repr
+        x_i, _ = i_repr
+
+        sparse_dots = (a_i.unsqueeze(-2) * x_i).sum(dim=-1)
+        return sparse_dots
+
+    def get_and_reset_other_loss(self) -> Dict:
+        acc_ts, acc_ind, acc_cf = self._acc_ts, self._acc_ind, self._acc_cf
+        self._acc_ts = self._acc_ind = self._acc_cf = 0
+        cf_loss = self.lam_cf * acc_cf
+        ind_loss = self.lam_ind * acc_ind
+        ts_loss = self.lam_ts * acc_ts
+
+        return {
+            'reg_loss': ts_loss + ind_loss + cf_loss,
+            'cf_loss': cf_loss,
+            'ind_loss': ind_loss,
+            'ts_loss': ts_loss
+        }
+
+    @staticmethod
+    def build_from_conf(conf: dict, dataset: data.Dataset):
+        # We leave the other parameters to the default as suggested by the original paper
+        init_signature = inspect.signature(ExplainableCollaborativeFiltering.__init__)
+        def_parameters = {k: v.default for k, v in init_signature.parameters.items() if
+                          v.default is not inspect.Parameter.empty}
+        parameters = {**def_parameters, **conf}
+
+        return ExplainableCollaborativeFiltering(dataset.n_users, dataset.n_items, dataset.tag_matrix,
+                                                 dataset.sampling_matrix, parameters['embedding_dim'],
+                                                 parameters['n_clusters'], parameters['top_n'], parameters['top_m'],
+                                                 parameters['temp_masking'], parameters['temp_tags'],
+                                                 parameters['top_p'], parameters['lam_cf'], parameters['lam_ind'],
+                                                 parameters['lam_ts']
+                                                 )

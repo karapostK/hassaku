@@ -57,7 +57,6 @@ def tsne_plot(dis_mtx: np.ndarray, n_prototypes: int, entity_legend_text: str = 
     plt.close()
 
 
-
 def get_top_k_items(item_weights: np.ndarray, items_info: pd.DataFrame, proto_idx: int,
                     top_k: int = 10, invert: bool = False):
     """
@@ -214,6 +213,43 @@ def protomf_post_val(prototypes, entity_embeddings, sim_func, dis_func, entity_n
 
     return {
         'latent_space': latent_space_image,
+        'avg_pairwise_proto_sim': avg_pairwise_proto_sim,
+        'entity_to_proto_mean': entity_to_proto_mean,
+        'entity_to_proto_max': entity_to_proto_max,
+        'entity_to_proto_min': entity_to_proto_min,
+    }
+
+
+def protomf_post_val_light(prototypes, entity_embeddings, sim_func, dis_func, entity_name, curr_epoch):
+    """
+    Same as protomf_post_val but it skips the TSNE computation.
+    """
+    n_prototypes = len(prototypes)
+    with torch.no_grad():
+        # Sampling entities to avoid GPU crash
+        if len(entity_embeddings) >= MAX_ENTITIES:
+            indxs = torch.randperm(len(entity_embeddings))[:MAX_ENTITIES]
+            entity_embeddings = entity_embeddings[indxs]
+
+        proto_entities = torch.cat([prototypes, entity_embeddings])
+
+        # Computing sim_mtx and dis_mtx
+        sim_mtx = sim_func(proto_entities, proto_entities)
+
+        # Computing average pair-wise prototypes similarity
+        sim_mtx_proto = sim_mtx[:n_prototypes, :n_prototypes]
+
+        sim_mtx_proto_tril = torch.tril(sim_mtx_proto, diagonal=-1)
+        avg_pairwise_proto_sim = ((sim_mtx_proto_tril.sum() * 2) / (n_prototypes * (n_prototypes - 1))).item()
+
+        # Computing entity-to-prototypes statistics
+        entity_to_proto = sim_mtx[n_prototypes:, :n_prototypes]
+
+        entity_to_proto_mean = entity_to_proto.mean(dim=-1).mean().item()
+        entity_to_proto_max = entity_to_proto.max(dim=-1).values.mean().item()
+        entity_to_proto_min = entity_to_proto.min(dim=-1).values.mean().item()
+
+    return {
         'avg_pairwise_proto_sim': avg_pairwise_proto_sim,
         'entity_to_proto_mean': entity_to_proto_mean,
         'entity_to_proto_max': entity_to_proto_max,

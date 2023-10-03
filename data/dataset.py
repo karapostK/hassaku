@@ -223,3 +223,36 @@ class StubDataset(data.Dataset):
     def __getitem__(self, user_index):
         return user_index, np.arange(self.n_items), self.evaluation_matrix[user_index].toarray().squeeze().astype(
             'float32')
+
+
+class ECFTrainRecDataset(TrainRecDataset):
+
+    def __init__(self, data_path: str, delete_lhs: bool = True):
+        """
+        :param data_path: Path to the directory with listening_history_train.csv, user_idxs.csv, item_idxs.csv, genre_idxs.csv, item_genre_idxs.csv
+        :param delete_lhs: Whether the pandas dataframe should be deleted after creating the iteration/sampling mtxs.
+        """
+
+        super().__init__(data_path, delete_lhs)
+
+        self.tag_matrix = None
+        self._prepare_tag_data()
+
+        self.name = 'ECFTrainRecDataset'
+        logging.info(f'Built {self.name} module \n')
+
+    def _prepare_tag_data(self):
+        genre_idxs = pd.read_csv(os.path.join(self.data_path, 'genre_idxs.csv'))
+        item_genre_idxs = pd.read_csv(os.path.join(self.data_path, 'item_genre_idxs.csv'))
+
+        # Creating tag matrix
+        self.tag_matrix = sp.csr_matrix(
+            (np.ones(len(item_genre_idxs), dtype=np.int16), (item_genre_idxs.item_idx, item_genre_idxs.genre_idx)),
+            shape=(self.n_items, len(genre_idxs))
+        )
+
+        tag_frequency = np.array(self.tag_matrix.sum(axis=0)).flatten()
+
+        tag_weight = np.log(self.n_items / (tag_frequency + 1e-6))
+        # Applying weight to tags
+        self.tag_matrix = self.tag_matrix @ sp.diags(tag_weight)

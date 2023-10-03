@@ -3,15 +3,17 @@ import enum
 import logging
 import math
 import os.path
+import shutil
 import zipfile
 
+import gdown
 import pandas as pd
 import requests
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from data.dataloader import TrainDataLoader, NegativeSampler
-from data.dataset import TrainRecDataset, FullEvalDataset
+from data.dataset import TrainRecDataset, FullEvalDataset, ECFTrainRecDataset
 
 LOG_FILT_DATA_PATH = "log_filtering_data.txt"
 
@@ -23,6 +25,8 @@ LFM2B_2020_USER_DATASET_LINK = "http://www.cp.jku.at/datasets/LFM-2b/recsys22/us
 LFM2B_2020_TRACK_DATASET_LINK = "http://www.cp.jku.at/datasets/LFM-2b/recsys22/tracks.tsv.bz2"
 
 AMAZONVID2018_DATASET_LINK = "https://jmcauley.ucsd.edu/data/amazon_v2/categoryFilesSmall/Video_Games.csv"
+
+DELIVERY_HERO_SINGAPORE_DATASET_FILE_ID = "1v-FfCbLtv02EpNpopDx25EQnHZeT1nL2"
 
 
 class DatasetsEnum(enum.Enum):
@@ -120,6 +124,33 @@ def download_lfm2b_2020_dataset(save_path: str = './'):
 
     with open(file_name, 'wb') as fw:
         fw.write(data)
+
+
+def download_delivery_hero_sg_dataset(save_path: str = './'):
+    """
+    Downloads the Delivery Hero 2023 Dataset for Singapore
+    https://dl.acm.org/doi/10.1145/3604915.3610242
+    @type save_path: path to the folder where to save the raw dataset. Default to "./"
+    """
+
+    if not os.path.exists(os.path.join(save_path, 'raw_dataset')):
+        os.makedirs(os.path.join(save_path, 'raw_dataset'))
+
+    # Downloading
+    print("Downloading the dataset...")
+    dataset_zip_name = os.path.join(save_path, 'data_sg.zip')
+    gdown.download(id=DELIVERY_HERO_SINGAPORE_DATASET_FILE_ID, output=dataset_zip_name)
+
+    # Unzipping
+    with zipfile.ZipFile(dataset_zip_name, 'r') as zipr:
+        zipr.extractall(save_path)
+
+    os.remove(dataset_zip_name)
+    shutil.rmtree(os.path.join(save_path, '__MACOSX'))
+
+    os.rename('data_sg', 'raw_dataset')
+
+    print('Dataset downloaded')
 
 
 def download_amazonvid2018_dataset(save_path: str = './'):
@@ -274,7 +305,13 @@ def get_dataloader(conf: dict, split_set: str) -> DataLoader:
     """
 
     if split_set == 'train':
-        train_dataset = TrainRecDataset(data_path=conf['dataset_path'])
+        if conf['alg'] == 'ecf':
+            train_dataset_class = ECFTrainRecDataset
+        else:
+            train_dataset_class = TrainRecDataset
+
+        train_dataset = train_dataset_class(data_path=conf['dataset_path'])
+
         sampler = NegativeSampler(
             train_dataset=train_dataset,
             n_neg=conf['neg_train'],
