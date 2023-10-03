@@ -1,0 +1,95 @@
+# Yaml Sweep Configuration
+
+program: sweep_agent.py
+method: bayes
+metric:
+  name: max_optimizing_metric
+  goal: maximize
+name: iprotomf-lfm2b2020-sweep
+project: test-sweep
+entity: karapost
+run_cap: 50
+
+parameters:
+  #### Fixed Hyperparameters ####
+
+  # Dataset & Algorithm #
+  alg:
+    value: iprotomf
+  dataset:
+    value: lfm2b2020
+  data_path:
+    value: /home/alessandro/hassaku/data
+
+  # Model Parameters #
+
+  # Training Parameters #
+  rec_loss:
+    value: sampled_softmax
+  train_batch_size:
+    value: 256
+  optimizer:
+    value: adamw
+  neg_train:
+    value: 10
+  n_epochs:
+    value: 100
+  max_patience:
+    value: 5
+
+  # Running Parameters #
+  eval_batch_size:
+    value: 8
+  device:
+    value: cuda
+  running_settings:
+    parameters:
+      train_n_workers:
+        value: 8
+      eval_n_workers:
+        value: 2
+      batch_verbose:
+        value: True
+  #### Varying Hyperparameters ####
+
+  # Model Parameters #
+  embedding_dim:
+    distribution: int_uniform
+    min: 128
+    max: 512
+  n_prototypes:
+    distribution: int_uniform
+    min: 512
+    max: 1024
+  # Training Parameters #
+  lr:
+    distribution: log_uniform_values
+    min: 5e-3
+    max: 1e-1
+  wd:
+    distribution: log_uniform_values
+    min: 1e-6
+    max: 1e-2
+  sim_batch_weight:
+    distribution: log_uniform_values
+    min: 1e-4
+    max: 1e-1
+  sim_proto_weight:
+    distribution: log_uniform_values
+    min: 1e-4
+    max: 1e-1
+
+  # Running Parameters #
+
+
+
+
+
+
+
+
+
+
+
+
+

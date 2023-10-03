@@ -1,0 +1,100 @@
+# Yaml Sweep Configuration
+
+program: sweep_agent.py
+method: bayes
+metric:
+  name: max_optimizing_metric
+  goal: maximize
+name: uprotomf-lfm2b2020-sweep
+project: test-sweep
+entity: karapost
+run_cap: 500
+
+parameters:
+  #### Fixed Hyperparameters ####
+
+  # Dataset & Algorithm #
+  alg:
+    value: uprotomf
+  dataset:
+    value: lfm2b2020
+  data_path:
+    value: /home/alessandro/hassaku/data
+
+  # Model Parameters #
+
+  # Training Parameters #
+  rec_loss:
+    value: sampled_softmax
+
+  optimizer:
+    value: adamw
+
+  n_epochs:
+    value: 100
+  max_patience:
+    value: 5
+
+  # Running Parameters #
+  eval_batch_size:
+    value: 16
+  device:
+    value: cuda
+  running_settings:
+    parameters:
+      train_n_workers:
+        value: 8
+      eval_n_workers:
+        value: 3
+      batch_verbose:
+        value: True
+  #### Varying Hyperparameters ####
+
+  # Model Parameters #
+  embedding_dim:
+    distribution: int_uniform
+    min: 128
+    max: 512
+  n_prototypes:
+    distribution: int_uniform
+    min: 64
+    max: 1024
+  # Training Parameters #
+  lr:
+    distribution: log_uniform_values
+    min: 1e-4
+    max: 5e-3
+  wd:
+    distribution: log_uniform_values
+    min: 1e-6
+    max: 1e-2
+  sim_batch_weight:
+    distribution: log_uniform_values
+    min: 1e-4
+    max: 1e-1
+  sim_proto_weight:
+    distribution: log_uniform_values
+    min: 1e-4
+    max: 1e-1
+  neg_train:
+    distribution: int_uniform
+    min: 1
+    max: 100
+  train_batch_size:
+    distribution: int_uniform
+    min: 32
+    max: 512
+  # Running Parameters #
+
+
+
+
+
+
+
+
+
+
+
+
+

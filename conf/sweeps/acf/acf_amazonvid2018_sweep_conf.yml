@@ -1,0 +1,94 @@
+# Yaml Sweep Configuration
+
+program: sweep_agent.py
+method: bayes
+metric:
+  name: max_optimizing_metric
+  goal: maximize
+name: acf-amazonvid2018-sweep
+project: test-sweep
+entity: karapost
+run_cap: 50
+
+parameters:
+  #### Fixed Hyperparameters ####
+
+  # Dataset & Algorithm #
+  alg:
+    value: acf
+  dataset:
+    value: amazonvid2018
+  data_path:
+    value: /home/alessandro/hassaku/data
+
+  # Model Parameters #
+
+  # Training Parameters #
+  rec_loss:
+    value: sampled_softmax
+  train_batch_size:
+    value: 256
+  optimizer:
+    value: adagrad
+  neg_train:
+    value: 10
+  n_epochs:
+    value: 100
+  max_patience:
+    value: 5
+
+  # Running Parameters #
+  eval_batch_size:
+    value: 8
+  device:
+    value: cuda
+  running_settings:
+    parameters:
+      train_n_workers:
+        value: 8
+      eval_n_workers:
+        value: 2
+      batch_verbose:
+        value: True
+  #### Varying Hyperparameters ####
+
+  # Model Parameters #
+  embedding_dim:
+    distribution: int_uniform
+    min: 64
+    max: 512
+  n_anchors:
+    distribution: int_uniform
+    min: 10
+    max: 512
+  # Training Parameters #
+  lr:
+    distribution: log_uniform_values
+    min: 1e-3
+    max: 1
+  wd:
+    distribution: log_uniform_values
+    min: 1e-6
+    max: 1e-3
+  delta_exc:
+    distribution: log_uniform_values
+    min: 1e-3
+    max: 1
+  delta_inc:
+    distribution: log_uniform_values
+    min: 1e-2
+    max: 1e1
+  # Running Parameters #
+
+
+
+
+
+
+
+
+
+
+
+
+

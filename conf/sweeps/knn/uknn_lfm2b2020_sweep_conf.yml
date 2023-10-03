@@ -1,0 +1,69 @@
+# Yaml Sweep Configuration
+
+program: sweep_agent.py
+method: bayes
+metric:
+  name: ndcg@10
+  goal: maximize
+name: uknn-lfm2b2020-sweep
+project: test-sweep
+entity: karapost
+run_cap: 50
+
+parameters:
+  #### Fixed Hyperparameters ####
+
+  # Dataset & Algorithm #
+  alg:
+    value: uknn
+  dataset:
+    value: lfm2b2020
+  data_path:
+    value: /home/alessandro/PycharmProjects/hassaku/data
+
+  # Model Parameters #
+  sim_func_params:
+    parameters:
+      sim_func_name:
+        value: cosine
+  # Training Parameters #
+
+  # Running Parameters #
+  eval_batch_size:
+    value: 64
+  device:
+    value: cpu
+  running_settings:
+    parameters:
+      train_n_workers:
+        value: 0
+      eval_n_workers:
+        value: 2
+      batch_verbose:
+        value: True
+  #### Varying Hyperparameters ####
+
+  # Model Parameters #
+  k:
+    distribution: int_uniform
+    min: 3
+    max: 512
+  shrinkage:
+    distribution: int_uniform
+    min: 0
+    max: 512
+  # Training Parameters #
+  # Running Parameters #
+
+
+
+
+
+
+
+
+
+
+
+
+
