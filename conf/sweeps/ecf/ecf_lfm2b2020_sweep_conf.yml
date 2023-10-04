@@ -1,0 +1,97 @@
+# Yaml Sweep Configuration
+
+program: sweep_agent.py
+method: bayes
+metric:
+  name: max_optimizing_metric
+  goal: maximize
+name: ecf-lfm2b2020-sweep
+project: test-sweep
+entity: karapost
+run_cap: 200
+
+parameters:
+  #### Fixed Hyperparameters ####
+
+  # Dataset & Algorithm #
+  alg:
+    value: ecf
+  dataset:
+    value: lfm2b2020
+  data_path:
+    value: /home/alessandro/hassaku/data
+
+  # Model Parameters #
+
+  # Training Parameters #
+  rec_loss:
+    value: bpr
+  train_batch_size:
+    value: 256
+  optimizer:
+    value: adam
+  neg_train:
+    value: 10
+  n_epochs:
+    value: 100
+  max_patience:
+    value: 5
+  wd:
+    value: 0
+
+
+  # Running Parameters #
+  eval_batch_size:
+    value: 10
+  device:
+    value: cuda
+  running_settings:
+    parameters:
+      train_n_workers:
+        value: 8
+      eval_n_workers:
+        value: 2
+      batch_verbose:
+        value: True
+  #### Varying Hyperparameters ####
+
+  # Model Parameters #
+  embedding_dim:
+    distribution: int_uniform
+    min: 64
+    max: 512
+  n_clusters:
+    distribution: int_uniform
+    min: 50
+    max: 1024
+  # Training Parameters #
+  lr:
+    distribution: log_uniform_values
+    min: 1e-3
+    max: 5e-2
+  lam_ts:
+    distribution: log_uniform_values
+    min: 1e-2
+    max: 1e-1
+  lam_ind:
+    distribution: log_uniform_values
+    min: 1e-2
+    max: 1
+  lam_cf:
+    distribution: uniform
+    min: 0
+    max: 0.6
+  # Running Parameters #
+
+
+
+
+
+
+
+
+
+
+
+
+

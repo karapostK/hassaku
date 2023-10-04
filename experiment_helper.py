@@ -4,9 +4,10 @@ import wandb
 from algorithms.algorithms_utils import AlgorithmsEnum
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm, SparseMatrixBasedRecommenderAlgorithm
 from algorithms.naive_algs import PopularItems
+from algorithms.sgd_alg import ExplainableCollaborativeFiltering
 from conf.conf_parser import parse_conf_file, parse_conf, save_yaml
 from data.data_utils import DatasetsEnum, get_dataloader
-from data.dataset import TrainRecDataset
+from data.dataset import TrainRecDataset, ECFTrainRecDataset
 from eval.eval import evaluate_recommender_algorithm
 from train.trainer import Trainer
 from utilities.utils import reproducible
@@ -93,6 +94,8 @@ def run_test(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union[str,
     if alg.value == PopularItems:
         # Popular Items requires the popularity distribution over the items learned over the training data
         alg = alg.value.build_from_conf(conf, TrainRecDataset(conf['dataset_path']))
+    elif alg.value == ExplainableCollaborativeFiltering:
+        alg = alg.value.build_from_conf(conf, ECFTrainRecDataset(conf['dataset_path']))
     else:
         alg = alg.value.build_from_conf(conf, test_loader.dataset)
 
