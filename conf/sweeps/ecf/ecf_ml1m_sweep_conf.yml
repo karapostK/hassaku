@@ -5,7 +5,7 @@ method: bayes
 metric:
   name: max_optimizing_metric
   goal: maximize
-name: acf-lfm2b2020-sweep
+name: ecf-ml1m-sweep
 project: test-sweep
 entity: karapost
 run_cap: 50
@@ -15,9 +15,9 @@ parameters:
 
   # Dataset & Algorithm #
   alg:
-    value: acf
+    value: ecf
   dataset:
-    value: lfm2b2020
+    value: ml1m
   data_path:
     value: /home/alessandro/hassaku/data
 
@@ -25,21 +25,27 @@ parameters:
 
   # Training Parameters #
   rec_loss:
-    value: sampled_softmax
+    value: bpr
   train_batch_size:
     value: 256
   optimizer:
-    value: adagrad
+    value: adam
   neg_train:
     value: 10
   n_epochs:
-    value: 100
+    value: 50
   max_patience:
     value: 5
+  wd:
+    value: 0
+  lam_ind:
+    value: 1
+  lam_cf:
+    value: 0.6
 
   # Running Parameters #
   eval_batch_size:
-    value: 16
+    value: 64
   device:
     value: cuda
   running_settings:
@@ -56,28 +62,20 @@ parameters:
   embedding_dim:
     distribution: int_uniform
     min: 64
-    max: 512
-  n_anchors:
+    max: 256
+  n_clusters:
     distribution: int_uniform
-    min: 512
-    max: 1024
+    min: 50
+    max: 256
   # Training Parameters #
   lr:
     distribution: log_uniform_values
-    min: 5e-2
-    max: 2e-1
-  wd:
-    distribution: log_uniform_values
-    min: 5e-6
-    max: 5e-5
-  delta_exc:
-    distribution: log_uniform_values
     min: 1e-3
-    max: 5e-3
-  delta_inc:
+    max: 5e-2
+  lam_ts:
     distribution: log_uniform_values
-    min: 1
-    max: 1e1
+    min: 1e-2
+    max: 1e-1
   # Running Parameters #
 
 
