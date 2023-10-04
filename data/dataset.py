@@ -229,7 +229,7 @@ class ECFTrainRecDataset(TrainRecDataset):
 
     def __init__(self, data_path: str, delete_lhs: bool = True):
         """
-        :param data_path: Path to the directory with listening_history_train.csv, user_idxs.csv, item_idxs.csv, genre_idxs.csv, item_genre_idxs.csv
+        :param data_path: Path to the directory with listening_history_train.csv, user_idxs.csv, item_idxs.csv, tag_idxs.csv, item_tag_idxs.csv
         :param delete_lhs: Whether the pandas dataframe should be deleted after creating the iteration/sampling mtxs.
         """
 
@@ -242,13 +242,13 @@ class ECFTrainRecDataset(TrainRecDataset):
         logging.info(f'Built {self.name} module \n')
 
     def _prepare_tag_data(self):
-        genre_idxs = pd.read_csv(os.path.join(self.data_path, 'genre_idxs.csv'))
-        item_genre_idxs = pd.read_csv(os.path.join(self.data_path, 'item_genre_idxs.csv'))
+        tag_idxs = pd.read_csv(os.path.join(self.data_path, 'tag_idxs.csv'))
+        item_tag_idxs = pd.read_csv(os.path.join(self.data_path, 'item_tag_idxs.csv'))
 
         # Creating tag matrix
         self.tag_matrix = sp.csr_matrix(
-            (np.ones(len(item_genre_idxs), dtype=np.int16), (item_genre_idxs.item_idx, item_genre_idxs.genre_idx)),
-            shape=(self.n_items, len(genre_idxs))
+            (np.ones(len(item_tag_idxs), dtype=np.int16), (item_tag_idxs.item_idx, item_tag_idxs.tag_idx)),
+            shape=(self.n_items, len(tag_idxs))
         )
 
         tag_frequency = np.array(self.tag_matrix.sum(axis=0)).flatten()

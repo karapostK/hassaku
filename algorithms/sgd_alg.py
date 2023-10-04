@@ -829,9 +829,8 @@ class ExplainableCollaborativeFiltering(SGDBasedRecommenderAlgorithm):
     """
 
     def __init__(self, n_users: int, n_items: int, tag_matrix: sp.csr_matrix, interaction_matrix: sp.csr_matrix,
-                 embedding_dim: int = 100,
-                 n_clusters: int = 64, top_n: int = 20,
-                 top_m: int = 20, temp_masking: float = 2., temp_tags: float = 2., top_p: int = 4, lam_cf: float = 0.6,
+                 embedding_dim: int = 100, n_clusters: int = 64, top_n: int = 20, top_m: int = 20,
+                 temp_masking: float = 2., temp_tags: float = 2., top_p: int = 4, lam_cf: float = 0.6,
                  lam_ind: float = 1., lam_ts: float
                  = 1.):
         super().__init__()
@@ -889,7 +888,9 @@ class ExplainableCollaborativeFiltering(SGDBasedRecommenderAlgorithm):
         dots = self.combine_user_item_representations(u_repr, i_repr)
 
         # Tag Loss
+        # N.B. Frequency weighting factor is already included in the tag_matrix.
         d_c = self._xs.T @ self.tag_matrix.to(u_idxs.device)  # [n_clusters, n_tags]
+        # since log is a monotonic function we can invert the order between log and topk
         log_b_c = nn.LogSoftmax(-1)(d_c / self.temp_tags)
         top_log_b_c = log_b_c.topk(self.top_p, dim=-1).values  # [n_clusters, top_p]
 
@@ -994,7 +995,6 @@ class ExplainableCollaborativeFiltering(SGDBasedRecommenderAlgorithm):
 
     @staticmethod
     def build_from_conf(conf: dict, dataset: data.Dataset):
-        # We leave the other parameters to the default as suggested by the original paper
         init_signature = inspect.signature(ExplainableCollaborativeFiltering.__init__)
         def_parameters = {k: v.default for k, v in init_signature.parameters.items() if
                           v.default is not inspect.Parameter.empty}
