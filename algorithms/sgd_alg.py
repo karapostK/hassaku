@@ -838,8 +838,8 @@ class ExplainableCollaborativeFiltering(SGDBasedRecommenderAlgorithm):
         self.n_users = n_users
         self.n_items = n_items
         self.tag_matrix = nn.Parameter(torch.from_numpy(tag_matrix.A), requires_grad=False).float()
-        self.interaction_matrix = nn.Embedding.from_pretrained(torch.from_numpy(interaction_matrix.A).float(),
-                                                               freeze=True)
+        self.interaction_matrix = nn.Parameter(torch.from_numpy(interaction_matrix.A), requires_grad=False).float()
+
         self.embedding_dim = embedding_dim
         self.n_clusters = n_clusters
         self.top_n = top_n
@@ -921,7 +921,7 @@ class ExplainableCollaborativeFiltering(SGDBasedRecommenderAlgorithm):
         return dots
 
     def get_user_representations(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
-        y_u = self.interaction_matrix(u_idxs)  # [batch_size, n_items]
+        y_u = self.interaction_matrix[u_idxs]  # [batch_size, n_items]
         u_embed = self.user_embed(u_idxs)
 
         a_tilde = y_u @ self._xs  # [batch_size, n_clusters]

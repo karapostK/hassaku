@@ -1,3 +1,6 @@
+import glob
+import os
+
 import wandb
 from algorithms.algorithms_utils import AlgorithmsEnum
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm, SparseMatrixBasedRecommenderAlgorithm
@@ -7,17 +10,23 @@ from data.dataset import TrainRecDataset
 from eval.eval import evaluate_recommender_algorithm
 from train.trainer import Trainer
 from utilities.utils import reproducible
+from wandb_conf import KEEP_TOP_RUNS
 
 
 def train_val_agent():
     # Initialization and gathering hyperparameters
     run = wandb.init(job_type='train/val')
 
-    conf = wandb.config
+    run_id = run.id
+    project = run.project
+    entity = run.entity
+    sweep_id = run.sweep_id
+    conf = {k: v for k, v in wandb.config.items() if k[0] != '_'}
 
-    alg = AlgorithmsEnum[conf.alg]
-    dataset = DatasetsEnum[conf.dataset]
+    alg = AlgorithmsEnum[conf['alg']]
+    dataset = DatasetsEnum[conf['dataset']]
 
+    conf['sweep_id'] = sweep_id
     conf = parse_conf(conf, alg, dataset)
 
     # Updating wandb data
@@ -26,6 +35,7 @@ def train_val_agent():
 
     print('Starting Train-Val')
     print(f'Algorithm is {alg.name} - Dataset is {dataset.name}')
+    print(f'Sweep ID is {sweep_id}')
 
     reproducible(conf['running_settings']['seed'])
 
@@ -65,6 +75,28 @@ def train_val_agent():
     else:
         raise ValueError(f'Training for {alg.value} has been not implemented')
     save_yaml(conf['model_path'], conf)
+
+    # To reduce space consumption. Check if the run is in the top-10 best. If not, delete the model.
+
+    api = wandb.Api()
+    sweep = api.sweep(f"{entity}/{project}/{sweep_id}")
+    top_runs = api.runs(path=f'{entity}/{project}',
+                        per_page=KEEP_TOP_RUNS,
+                        order=sweep.order,
+                        filters={"$and": [{"sweep": f"{sweep_id}"}]}
+                        )[:KEEP_TOP_RUNS]
+    top_runs_ids = {x.id for x in top_runs}
+
+    if run_id not in top_runs_ids:
+        print(f'Run {run_id} is not in the top-{KEEP_TOP_RUNS}.')
+        print(f'Model will be deleted')
+        # Delete Model
+
+        alg_model_path = os.path.join(conf['model_path'], 'model.*')
+        alg_model_files = glob.glob(alg_model_path)
+        for alg_model_file in alg_model_files:
+            os.remove(alg_model_file)
+
     wandb.finish()
 
 

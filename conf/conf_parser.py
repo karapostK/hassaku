@@ -75,7 +75,15 @@ def parse_conf(conf: dict, alg: AlgorithmsEnum, dataset: DatasetsEnum) -> dict:
             conf['model_save_path'] = DEF_MODEL_SAVE_PATH
             added_parameters_list.append(f"model_save_path={conf['model_save_path']}")
 
-        conf['model_path'] = os.path.join(conf['model_save_path'], "{}-{}".format(alg.name, dataset.name),
+        alg_dataset_folder = "{}-{}".format(alg.name, dataset.name)
+        if 'sweep_id' in conf:
+            intermediate_folders = f"sweeps/{conf['sweep_id']}"
+        else:
+            intermediate_folders = 'single_runs'
+
+        conf['model_path'] = os.path.join(conf['model_save_path'],
+                                          alg_dataset_folder,
+                                          intermediate_folders,
                                           conf['time_run'])
         os.makedirs(conf['model_path'], exist_ok=True)
 
