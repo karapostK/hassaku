@@ -1007,3 +1007,10 @@ class ExplainableCollaborativeFiltering(SGDBasedRecommenderAlgorithm):
                                                  parameters['top_p'], parameters['lam_cf'], parameters['lam_ind'],
                                                  parameters['lam_ts']
                                                  )
+
+    def to(self, *args, **kwargs):
+        for arg in args:
+            if type(arg) == torch.device:
+                self.tag_matrix = self.tag_matrix.to(arg)
+                self.interaction_matrix = self.interaction_matrix.to(arg)
+        return super().to(*args, **kwargs)
