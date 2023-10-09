@@ -6,7 +6,7 @@ metric:
   name: max_optimizing_metric
   goal: maximize
 name: ecf-ml1m-sweep
-project: test-sweep
+project: protofair
 entity: karapost
 run_cap: 50
 
@@ -22,7 +22,8 @@ parameters:
     value: /home/alessandro/hassaku/data
 
   # Model Parameters #
-
+  n_clusters:
+    value: 128
   # Training Parameters #
   rec_loss:
     value: bpr
@@ -62,11 +63,7 @@ parameters:
   embedding_dim:
     distribution: int_uniform
     min: 64
-    max: 256
-  n_clusters:
-    distribution: int_uniform
-    min: 50
-    max: 256
+    max: 128
   # Training Parameters #
   lr:
     distribution: log_uniform_values
@@ -75,7 +72,7 @@ parameters:
   lam_ts:
     distribution: log_uniform_values
     min: 1e-2
-    max: 1e-1
+    max: 5e-2
   # Running Parameters #
 
 

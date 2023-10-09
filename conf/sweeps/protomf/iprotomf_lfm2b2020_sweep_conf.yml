@@ -6,7 +6,7 @@ metric:
   name: max_optimizing_metric
   goal: maximize
 name: iprotomf-lfm2b2020-sweep
-project: test-sweep
+project: protofair
 entity: karapost
 run_cap: 50
 
@@ -22,7 +22,8 @@ parameters:
     value: /home/alessandro/hassaku/data
 
   # Model Parameters #
-
+  n_prototypes:
+    value: 1024
   # Training Parameters #
   rec_loss:
     value: sampled_softmax
@@ -31,7 +32,7 @@ parameters:
   optimizer:
     value: adamw
   neg_train:
-    value: 10
+    value: 100
   n_epochs:
     value: 100
   max_patience:
@@ -57,27 +58,23 @@ parameters:
     distribution: int_uniform
     min: 128
     max: 512
-  n_prototypes:
-    distribution: int_uniform
-    min: 512
-    max: 1024
   # Training Parameters #
   lr:
     distribution: log_uniform_values
     min: 5e-3
-    max: 1e-1
+    max: 5e-2
   wd:
     distribution: log_uniform_values
-    min: 1e-6
+    min: 1e-5
     max: 1e-2
   sim_batch_weight:
     distribution: log_uniform_values
     min: 1e-4
-    max: 1e-1
+    max: 1e-2
   sim_proto_weight:
     distribution: log_uniform_values
     min: 1e-4
-    max: 1e-1
+    max: 1e-2
 
   # Running Parameters #
 

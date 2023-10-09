@@ -6,7 +6,7 @@ metric:
   name: max_optimizing_metric
   goal: maximize
 name: acf-ml1m-sweep
-project: test-sweep
+project: protofair
 entity: karapost
 run_cap: 50
 
@@ -22,7 +22,8 @@ parameters:
     value: /home/alessandro/hassaku/data
 
   # Model Parameters #
-
+  n_anchors:
+    value: 128
   # Training Parameters #
   rec_loss:
     value: sampled_softmax
@@ -56,11 +57,7 @@ parameters:
   embedding_dim:
     distribution: int_uniform
     min: 64
-    max: 512
-  n_anchors:
-    distribution: int_uniform
-    min: 10
-    max: 256
+    max: 128
   # Training Parameters #
   lr:
     distribution: log_uniform_values
@@ -68,12 +65,12 @@ parameters:
     max: 1
   wd:
     distribution: log_uniform_values
-    min: 1e-6
+    min: 1e-5
     max: 1e-4
   delta_exc:
     distribution: log_uniform_values
     min: 1e-3
-    max: 1e-1
+    max: 1e-2
   delta_inc:
     distribution: log_uniform_values
     min: 1e-1

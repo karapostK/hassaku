@@ -6,7 +6,7 @@ metric:
   name: max_optimizing_metric
   goal: maximize
 name: uprotomf-ml1m-sweep
-project: test-sweep
+project: protofair
 entity: karapost
 run_cap: 50
 
@@ -19,10 +19,11 @@ parameters:
   dataset:
     value: ml1m
   data_path:
-    value: /home/alessandro/PycharmProjects/hassaku/data
+    value: /home/alessandro/hassaku/data
 
   # Model Parameters #
-
+  n_prototypes:
+    value: 128
   # Training Parameters #
   rec_loss:
     value: sampled_softmax
@@ -56,28 +57,24 @@ parameters:
   embedding_dim:
     distribution: int_uniform
     min: 64
-    max: 512
-  n_prototypes:
-    distribution: int_uniform
-    min: 10
-    max: 128
+    max: 256
   # Training Parameters #
   lr:
     distribution: log_uniform_values
-    min: 5e-4
+    min: 1e-3
     max: 1e-2
   wd:
     distribution: log_uniform_values
     min: 1e-6
-    max: 1e-2
+    max: 1e-3
   sim_batch_weight:
     distribution: log_uniform_values
-    min: 1e-4
-    max: 1
+    min: 1e-3
+    max: 1e-1
   sim_proto_weight:
     distribution: log_uniform_values
-    min: 1e-4
-    max: 1
+    min: 1e-3
+    max: 1e-1
 
   # Running Parameters #
 

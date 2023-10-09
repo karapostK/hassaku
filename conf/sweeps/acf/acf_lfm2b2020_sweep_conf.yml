@@ -6,7 +6,7 @@ metric:
   name: max_optimizing_metric
   goal: maximize
 name: acf-lfm2b2020-sweep
-project: test-sweep
+project: protofair
 entity: karapost
 run_cap: 50
 
@@ -22,7 +22,8 @@ parameters:
     value: /home/alessandro/hassaku/data
 
   # Model Parameters #
-
+  n_anchors:
+    value: 1024
   # Training Parameters #
   rec_loss:
     value: sampled_softmax
@@ -31,7 +32,7 @@ parameters:
   optimizer:
     value: adagrad
   neg_train:
-    value: 10
+    value: 100
   n_epochs:
     value: 100
   max_patience:
@@ -39,7 +40,7 @@ parameters:
 
   # Running Parameters #
   eval_batch_size:
-    value: 16
+    value: 8
   device:
     value: cuda
   running_settings:
@@ -55,12 +56,8 @@ parameters:
   # Model Parameters #
   embedding_dim:
     distribution: int_uniform
-    min: 64
+    min: 256
     max: 512
-  n_anchors:
-    distribution: int_uniform
-    min: 512
-    max: 1024
   # Training Parameters #
   lr:
     distribution: log_uniform_values
@@ -68,8 +65,8 @@ parameters:
     max: 2e-1
   wd:
     distribution: log_uniform_values
-    min: 5e-6
-    max: 5e-5
+    min: 1e-5
+    max: 5e-4
   delta_exc:
     distribution: log_uniform_values
     min: 1e-3

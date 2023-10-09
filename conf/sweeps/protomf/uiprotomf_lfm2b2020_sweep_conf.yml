@@ -6,7 +6,7 @@ metric:
   name: max_optimizing_metric
   goal: maximize
 name: uiprotomf-lfm2b2020-sweep
-project: test-sweep
+project: protofair
 entity: karapost
 run_cap: 50
 
@@ -22,7 +22,10 @@ parameters:
     value: /home/alessandro/hassaku/data
 
   # Model Parameters #
-
+  u_n_prototypes:
+    value: 683
+  i_n_prototypes:
+    value: 341
   # Training Parameters #
   rec_loss:
     value: sampled_softmax
@@ -39,7 +42,7 @@ parameters:
 
   # Running Parameters #
   eval_batch_size:
-    value: 15
+    value: 10
   device:
     value: cuda
   running_settings:
@@ -56,15 +59,7 @@ parameters:
   embedding_dim:
     distribution: int_uniform
     min: 64
-    max: 256
-  u_n_prototypes:
-    distribution: int_uniform
-    min: 700
-    max: 1024
-  i_n_prototypes:
-    distribution: int_uniform
-    min: 700
-    max: 1024
+    max: 180
   # Training Parameters #
   lr:
     distribution: log_uniform_values
@@ -76,20 +71,20 @@ parameters:
     max: 5e-3
   u_sim_batch_weight:
     distribution: log_uniform_values
-    min: 1e-4
+    min: 3e-4
     max: 5e-3
   u_sim_proto_weight:
     distribution: log_uniform_values
-    min: 1e-4
+    min: 3e-4
     max: 5e-3
   i_sim_batch_weight:
     distribution: log_uniform_values
-    min: 5e-4
+    min: 1e-2
     max: 1e-1
   i_sim_proto_weight:
     distribution: log_uniform_values
     min: 1e-4
-    max: 2e-1
+    max: 1e-2
 
   # Running Parameters #
 

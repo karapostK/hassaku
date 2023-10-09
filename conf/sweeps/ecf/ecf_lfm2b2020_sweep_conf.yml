@@ -6,7 +6,7 @@ metric:
   name: max_optimizing_metric
   goal: maximize
 name: ecf-lfm2b2020-sweep
-project: test-sweep
+project: protofair
 entity: karapost
 run_cap: 50
 
@@ -22,7 +22,8 @@ parameters:
     value: /home/alessandro/hassaku/data
 
   # Model Parameters #
-
+  n_clusters:
+    value: 1024
   # Training Parameters #
   rec_loss:
     value: bpr
@@ -31,13 +32,18 @@ parameters:
   optimizer:
     value: adam
   neg_train:
-    value: 10
+    value: 100
   n_epochs:
     value: 100
   max_patience:
     value: 5
   wd:
     value: 0
+  lam_ind:
+    value: 1
+  lam_cf:
+    value: 0.6
+
 
 
   # Running Parameters #
@@ -60,27 +66,16 @@ parameters:
     distribution: int_uniform
     min: 300
     max: 512
-  n_clusters:
-    distribution: int_uniform
-    min: 700
-    max: 1024
   # Training Parameters #
   lr:
     distribution: log_uniform_values
-    min: 5e-3
+    min: 1e-3
     max: 5e-2
   lam_ts:
     distribution: log_uniform_values
     min: 1e-2
-    max: 1e-1
-  lam_ind:
-    distribution: log_uniform_values
-    min: 1e-1
-    max: 1
-  lam_cf:
-    distribution: uniform
-    min: 0
-    max: 0.4
+    max: 5e-2
+
   # Running Parameters #
 
 
