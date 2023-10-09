@@ -1,6 +1,7 @@
 import inspect
 import logging
 import math
+import os
 from typing import Union, Tuple, Dict
 
 import torch
@@ -1014,3 +1015,9 @@ class ExplainableCollaborativeFiltering(SGDBasedRecommenderAlgorithm):
                 self.tag_matrix = self.tag_matrix.to(arg)
                 self.interaction_matrix = self.interaction_matrix.to(arg)
         return super().to(*args, **kwargs)
+
+    def load_model_from_path(self, path: str):
+        path = os.path.join(path, 'model.pth')
+        state_dict = torch.load(path)
+        self.load_state_dict(state_dict, strict=False)
+        print('Model Loaded')
