@@ -10,7 +10,7 @@ from scp import SCPClient
 import wandb
 from algorithms.algorithms_utils import AlgorithmsEnum
 from algorithms.naive_algs import PopularItems
-from algorithms.sgd_alg import ExplainableCollaborativeFiltering
+from algorithms.sgd_alg import ECF
 from data.data_utils import get_dataloader, DatasetsEnum
 from data.dataset import TrainRecDataset, ECFTrainRecDataset
 from eval.eval import evaluate_recommender_algorithm
@@ -34,30 +34,35 @@ if '_items' in best_run_config:
     best_run_config = best_run_config['_items']['value']
 else:
     best_run_config = {k: v['value'] for k, v in best_run_config.items()}
+
 best_run_model_path = best_run_config['model_path']
-print(best_run_model_path)
+print('Best Run Model Path: ', best_run_model_path)
 
 # Create base directory if absent
-Path(os.path.dirname(best_run_model_path)).mkdir(parents=True, exist_ok=True)
-
+local_path = best_run_model_path
 current_host = socket.gethostname()
 
-if current_host != best_run_host:
-    print('Importing Model...')
-    # Moving the best model to local directory
-    # N.B. Assuming same username
-    with SSHClient() as ssh:
-        ssh.load_system_host_keys()
-        ssh.connect(best_run_host)
+if not os.path.isdir(local_path):
+    Path(local_path).mkdir(parents=True, exist_ok=True)
 
-        with SCPClient(ssh.get_transport()) as scp:
-            # enoughcool4hardcoding
-            dir_path = "hassaku"
-            if best_run_host == 'passionpit.cp.jku.at':
-                dir_path = os.path.join(dir_path, "PycharmProjects")
+    if current_host != best_run_host:
+        print(f'Importing Model from {best_run_host}')
+        # Moving the best model to local directory
+        # N.B. Assuming same username
+        with SSHClient() as ssh:
+            ssh.load_system_host_keys()
+            ssh.connect(best_run_host)
 
-            scp.get(remote_path=os.path.join(dir_path, best_run_model_path), local_path=best_run_model_path,
-                    recursive=True)
+            with SCPClient(ssh.get_transport()) as scp:
+                # enoughcool4hardcoding
+                dir_path = "hassaku"
+                if best_run_host == 'passionpit.cp.jku.at':
+                    dir_path = os.path.join(dir_path, "PycharmProjects")
+
+                scp.get(remote_path=os.path.join(dir_path, best_run_model_path), local_path=os.path.dirname(local_path),
+                        recursive=True)
+    else:
+        raise FileNotFoundError(f"The model should be local but it was not found! Path is: {local_path}")
 
 # Adjusting dataset_path configuration for testing #enoughcool4hardcoding
 if current_host == 'passionpit.cp.jku.at' and best_run_host != 'passionpit.cp.jku.at':
@@ -87,7 +92,7 @@ test_loader = get_dataloader(conf, 'test')
 if alg.value == PopularItems:
     # Popular Items requires the popularity distribution over the items learned over the training data
     alg = alg.value.build_from_conf(conf, TrainRecDataset(conf['dataset_path']))
-elif alg.value == ExplainableCollaborativeFiltering:
+elif alg.value == ECF:
     alg = alg.value.build_from_conf(conf, ECFTrainRecDataset(conf['dataset_path']))
 else:
     alg = alg.value.build_from_conf(conf, test_loader.dataset)

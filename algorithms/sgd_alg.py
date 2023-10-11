@@ -266,6 +266,30 @@ class ACF(SGDBasedRecommenderAlgorithm):
         dots = (u_anc.unsqueeze(-2) * i_anc).sum(dim=-1)
         return dots
 
+    def get_item_representations_pre_tune(self, i_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        i_embed = self.item_embed(i_idxs)  # [batch_size, (n_neg + 1), embedding_dim]
+        c_i_unnorm = i_embed @ self.anchors.T  # [batch_size, (n_neg + 1), n_anchors]
+        return c_i_unnorm
+
+    def get_item_representations_post_tune(self, c_i_unnorm: torch.Tensor) -> Union[
+        torch.Tensor, Tuple[torch.Tensor, ...]]:
+        c_i = nn.Softmax(dim=-1)(c_i_unnorm)  # [batch_size, (n_neg + 1), n_anchors]
+
+        i_anc = c_i @ self.anchors  # [batch_size, (n_neg + 1), embedding_dim]
+        return i_anc, c_i, c_i_unnorm
+
+    def get_user_representations_pre_tune(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        u_embed = self.user_embed(u_idxs)  # [batch_size, embedding_dim]
+        c_u = u_embed @ self.anchors.T  # [batch_size, n_anchors]
+        return c_u
+
+    def get_user_representations_post_tune(self, c_u: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        c_u = nn.Softmax(dim=-1)(c_u)
+
+        u_anc = c_u @ self.anchors  # [batch_size, embedding_dim]
+
+        return u_anc
+
     def get_and_reset_other_loss(self) -> Dict:
         _acc_exc, _acc_inc = self._acc_exc, self._acc_inc
         self._acc_exc = self._acc_inc = 0
@@ -373,6 +397,13 @@ class UProtoMF(SGDBasedRecommenderAlgorithm):
             'batch_loss': batch_loss
         }
 
+    def get_user_representations_pre_tune(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        u_repr = self.get_user_representations(u_idxs)
+        return u_repr
+
+    def get_user_representations_post_tune(self, u_repr: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        return u_repr
+
     @staticmethod
     def build_from_conf(conf: dict, dataset: data.Dataset):
         return UProtoMF(dataset.n_users, dataset.n_items, conf['embedding_dim'], conf['n_prototypes'],
@@ -446,6 +477,13 @@ class IProtoMF(SGDBasedRecommenderAlgorithm):
         sim_mtx = sim_mtx.reshape(list(i_idxs.shape) + [self.n_prototypes])
 
         return sim_mtx
+
+    def get_item_representations_pre_tune(self, i_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        i_repr = self.get_item_representations(i_idxs)
+        return i_repr
+
+    def get_item_representations_post_tune(self, i_repr: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        return i_repr
 
     def combine_user_item_representations(self, u_repr: Union[torch.Tensor, Tuple[torch.Tensor, ...]],
                                           i_repr: Union[torch.Tensor, Tuple[torch.Tensor, ...]]) -> torch.Tensor:
@@ -541,6 +579,20 @@ class UIProtoMF(SGDBasedRecommenderAlgorithm):
         i_dots = (u_proj.unsqueeze(-2) * i_sim_mtx).sum(dim=-1)
         dots = u_dots + i_dots
         return dots
+
+    def get_item_representations_pre_tune(self, i_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        i_repr = self.get_item_representations(i_idxs)
+        return i_repr
+
+    def get_item_representations_post_tune(self, i_repr: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        return i_repr
+
+    def get_user_representations_pre_tune(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        u_repr = self.get_user_representations(u_idxs)
+        return u_repr
+
+    def get_user_representations_post_tune(self, u_repr: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        return u_repr
 
     def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
         u_repr = self.get_user_representations(u_idxs)
@@ -824,7 +876,7 @@ class UIProtoMFsCombine(RecommenderAlgorithm):
         return self.uprotomfs.predict(u_idxs, i_idxs) + self.iprotomfs.predict(u_idxs, i_idxs)
 
 
-class ExplainableCollaborativeFiltering(SGDBasedRecommenderAlgorithm):
+class ECF(SGDBasedRecommenderAlgorithm):
     """
     Implements the ECF model from https://dl.acm.org/doi/10.1145/3543507.3583303
     """
@@ -925,7 +977,7 @@ class ExplainableCollaborativeFiltering(SGDBasedRecommenderAlgorithm):
         y_u = self.interaction_matrix[u_idxs]  # [batch_size, n_items]
         u_embed = self.user_embed(u_idxs)
 
-        a_tilde = y_u @ self._xs  # [batch_size, n_clusters]
+        a_tilde = y_u @ self._x_tildes  # [batch_size, n_clusters]
 
         # Creating exact mask
         m = torch.zeros_like(a_tilde).to(a_tilde.device)
@@ -980,6 +1032,61 @@ class ExplainableCollaborativeFiltering(SGDBasedRecommenderAlgorithm):
         sparse_dots = (a_i.unsqueeze(-2) * x_i).sum(dim=-1)
         return sparse_dots
 
+    def get_item_representations_pre_tune(self) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        i_embed = self.item_embed.weight  # [n_items, embed_d]
+        x_tildes = compute_cosine_sim(i_embed, self.clusters)  # [n_items, n_clusters]
+        return x_tildes
+
+    def get_item_representations_post_tune(self, x_tildes: torch.Tensor) -> Union[
+        torch.Tensor, Tuple[torch.Tensor, ...]]:
+
+        assert x_tildes.shape[0] == self.n_items
+        self._x_tildes = x_tildes
+        # Creating exact mask
+        m = torch.zeros_like(x_tildes).to(x_tildes.device)
+        x_tilde_tops = x_tildes.topk(self.top_m).indices  # [n_items, top_m]
+        dummy_column = torch.arange(self.n_items)[:, None].to(x_tildes.device)
+        m[dummy_column, x_tilde_tops] = True
+
+        # Creating approximated mask
+        m_tilde = nn.Softmax(dim=-1)(x_tildes / self.temp_masking)  # [n_items, n_clusters]
+
+        # Putting together the masks
+        m_hat = m_tilde + (m - m_tilde).detach()
+
+        # Building affiliation vector
+        self._xs = nn.Sigmoid()(x_tildes) * m_hat
+        return self._xs, self.item_embed.weight
+
+    def get_user_representations_pre_tune(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        y_u = self.interaction_matrix[u_idxs]  # [batch_size, n_items]
+        u_embed = self.user_embed(u_idxs)
+        a_tilde = y_u @ self._x_tildes  # [batch_size, n_clusters]
+
+        return a_tilde, u_embed
+
+    def get_user_representations_post_tune(self, u_repr: torch.Tensor) -> Union[
+        torch.Tensor, Tuple[torch.Tensor, ...]]:
+
+        a_tilde, u_embed = u_repr
+
+        # Creating exact mask
+        m = torch.zeros_like(a_tilde).to(a_tilde.device)
+        a_tilde_tops = a_tilde.topk(self.top_n).indices
+        dummy_column = torch.arange(a_tilde.shape[0])[:, None].to(a_tilde.device)
+        m[dummy_column, a_tilde_tops] = True
+
+        # Creating approximated mask
+        m_tilde = nn.Softmax(dim=-1)(a_tilde / self.temp_masking)
+
+        # Putting together the masks
+        m_hat = m_tilde + (m - m_tilde).detach()
+
+        # Building affiliation vector
+        a_i = nn.Sigmoid()(a_tilde) * m_hat
+
+        return a_i, u_embed
+
     def get_and_reset_other_loss(self) -> Dict:
         acc_ts, acc_ind, acc_cf = self._acc_ts, self._acc_ind, self._acc_cf
         self._acc_ts = self._acc_ind = self._acc_cf = 0
@@ -996,22 +1103,22 @@ class ExplainableCollaborativeFiltering(SGDBasedRecommenderAlgorithm):
 
     @staticmethod
     def build_from_conf(conf: dict, dataset: data.Dataset):
-        init_signature = inspect.signature(ExplainableCollaborativeFiltering.__init__)
+        init_signature = inspect.signature(ECF.__init__)
         def_parameters = {k: v.default for k, v in init_signature.parameters.items() if
                           v.default is not inspect.Parameter.empty}
         parameters = {**def_parameters, **conf}
 
-        return ExplainableCollaborativeFiltering(dataset.n_users, dataset.n_items, dataset.tag_matrix,
-                                                 dataset.sampling_matrix, parameters['embedding_dim'],
-                                                 parameters['n_clusters'], parameters['top_n'], parameters['top_m'],
-                                                 parameters['temp_masking'], parameters['temp_tags'],
-                                                 parameters['top_p'], parameters['lam_cf'], parameters['lam_ind'],
-                                                 parameters['lam_ts']
-                                                 )
+        return ECF(dataset.n_users, dataset.n_items, dataset.tag_matrix,
+                   dataset.sampling_matrix, parameters['embedding_dim'],
+                   parameters['n_clusters'], parameters['top_n'], parameters['top_m'],
+                   parameters['temp_masking'], parameters['temp_tags'],
+                   parameters['top_p'], parameters['lam_cf'], parameters['lam_ind'],
+                   parameters['lam_ts']
+                   )
 
     def to(self, *args, **kwargs):
         for arg in args:
-            if type(arg) == torch.device:
+            if type(arg) == torch.device or arg == 'cuda' or arg == 'cpu':
                 self.tag_matrix = self.tag_matrix.to(arg)
                 self.interaction_matrix = self.interaction_matrix.to(arg)
         return super().to(*args, **kwargs)

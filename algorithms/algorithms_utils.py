@@ -6,7 +6,7 @@ from algorithms.linear_algs import EASE, SLIM
 from algorithms.mf_algs import SVDAlgorithm, AlternatingLeastSquare, RBMF
 from algorithms.naive_algs import PopularItems, RandomItems
 from algorithms.sgd_alg import SGDMatrixFactorization, UProtoMF, UIProtoMF, IProtoMF, SGDBaseline, ACF, UProtoMFs, \
-    IProtoMFs, UIProtoMFs, ExplainableCollaborativeFiltering
+    IProtoMFs, UIProtoMFs, ECF
 
 
 class AlgorithmsEnum(Enum):
@@ -29,6 +29,6 @@ class AlgorithmsEnum(Enum):
     uprotomfs = UProtoMFs
     iprotomfs = IProtoMFs
     uiprotomfs = UIProtoMFs
-    ecf = ExplainableCollaborativeFiltering
+    ecf = ECF
 
 
