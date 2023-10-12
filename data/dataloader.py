@@ -1,4 +1,5 @@
 import logging
+from abc import ABC
 from typing import Optional, Sequence
 
 import numpy as np
@@ -9,7 +10,11 @@ from torch.utils.data.dataloader import T_co, _worker_init_fn_t
 from data.dataset import TrainRecDataset
 
 
-class NegativeSampler:
+class InteractionSampler(ABC):
+    pass
+
+
+class NegativeSampler(InteractionSampler):
     """
     NegativeSampler manages the parameters for negative sampling.
     """
@@ -63,7 +68,7 @@ class TrainDataLoader(DataLoader):
     TrainDataLoader that performs negative sampling.
     """
 
-    def __init__(self, neg_sampler: NegativeSampler, dataset: Dataset[T_co], batch_size: Optional[int] = 1,
+    def __init__(self, interaction_sampler: InteractionSampler, dataset: Dataset[T_co], batch_size: Optional[int] = 1,
                  shuffle: bool = False,
                  sampler: Optional[Sampler] = None, batch_sampler: Optional[Sampler[Sequence]] = None,
                  num_workers: int = 0, pin_memory: bool = False,
@@ -71,36 +76,42 @@ class TrainDataLoader(DataLoader):
                  multiprocessing_context=None, generator=None, *, prefetch_factor: int = 2,
                  persistent_workers: bool = False):
 
-        self.neg_sampler = neg_sampler
+        self.interaction_sampler = interaction_sampler
+
+        if isinstance(self.interaction_sampler, NegativeSampler):
+            collate_function = self._neg_sampling_collate_fn
+        else:
+            raise ValueError('Invalid Interaction Sampler')
 
         super().__init__(dataset, batch_size, shuffle, sampler, batch_sampler, num_workers,
-                         self._neg_sampling_collate_fn, pin_memory,
+                         collate_function, pin_memory,
                          drop_last, timeout, worker_init_fn, multiprocessing_context, generator,
                          prefetch_factor=prefetch_factor, persistent_workers=persistent_workers)
 
     def _neg_sampling_collate_fn(self, batch):
         """
         It performs the negative sampling procedure for the batch.
-        @param batch: Batch is a list of tuples. Each tuple has the user_idx in [0] and item_idx in [1].
+        @param batch: Batch is a list of tuples. Each tuple has the user_idx in [0] and item_idxs in [1].
         @return:
-            user_idxs. Tensor containing the user_idxs. Shape is [batch_size].
-            item_idxs. Tensor containing the item_idxs. Shape is [batch_size, 1 + n_neg]. The first column holds the
-                        positive item.
-            labels. Tensor containing the labels. Shape is [batch_size, 1 + n_neg]. The first column holds 1s, the others
-                        0s.
+            -user_idxs. Tensor containing the user_idxs. Shape is [batch_size].
+            - item_idxs. Tensor containing the item_idxs. Shape is [batch_size, n_pos (usually 1) + n_neg].
+                The first columns holds the positive items
+            - labels. Tensor containing the labels. Shape is [batch_size, n_pos (usually 1) + n_neg].
+                The first columns holds the positive items
 
         """
-        n_neg = self.neg_sampler.n_neg
+        n_neg = self.interaction_sampler.n_neg
         batch_size = len(batch)
         user_idxs = np.array([x[0] for x in batch]).astype(np.int64)
         item_pos_idxs = np.array([x[1] for x in batch])
+        n_pos = item_pos_idxs.shape[-1] if len(item_pos_idxs.shape) > 1 else 1
 
         item_neg_idxs = np.empty((batch_size, n_neg), dtype=np.int64)
         mask = np.ones_like(item_neg_idxs, dtype=bool)
         to_resample = mask.sum()
 
         while True:
-            sampled_items = self.neg_sampler.neg_sampling_fun(to_resample)
+            sampled_items = self.interaction_sampler.neg_sampling_fun(to_resample)
             item_neg_idxs[mask] = sampled_items
 
             for i in range(batch_size):
@@ -113,5 +124,5 @@ class TrainDataLoader(DataLoader):
 
         items_idxs = np.column_stack([item_pos_idxs, item_neg_idxs]).astype(np.int64)
         labels = np.zeros_like(items_idxs, dtype=float)
-        labels[:, 0] = 1.
+        labels[:, :n_pos] = 1.
         return torch.from_numpy(user_idxs), torch.from_numpy(items_idxs), torch.from_numpy(labels)

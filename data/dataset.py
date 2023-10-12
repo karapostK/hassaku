@@ -256,3 +256,28 @@ class ECFTrainRecDataset(TrainRecDataset):
         tag_weight = np.log(self.n_items / (tag_frequency + 1e-6))
         # Applying weight to tags
         self.tag_matrix = self.tag_matrix @ sp.diags(tag_weight)
+
+
+class TrainUserRecDataset(TrainRecDataset):
+    """
+    Dataset that iterates over the users. It is used during training in pair with the positive/negative sampler.
+    """
+
+    def __init__(self, data_path: str, delete_lhs: bool = True, n_pos: int = 10):
+        super().__init__(data_path, delete_lhs)
+
+        self.n_pos = n_pos
+        self.name = 'TrainUserRecDataset'
+
+        del self.iteration_matrix
+
+        logging.info(f'Built {self.name} module \n'
+                     f'- n_pos: {self.n_pos} \n')
+
+    def __len__(self):
+        return self.n_users
+
+    def __getitem__(self, user_idx):
+        user_data = self.sampling_matrix[user_idx].indices
+        item_pos_idxs = np.random.choice(user_data, size=self.n_pos, replace=len(user_data) < self.n_pos)
+        return user_idx, item_pos_idxs
