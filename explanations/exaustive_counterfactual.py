@@ -6,6 +6,7 @@ import socket
 from pathlib import Path
 
 import pandas as pd
+import scipy.sparse
 import torch
 import wandb
 from paramiko import SSHClient
@@ -19,7 +20,7 @@ from data.data_utils import DatasetsEnum, get_dataloader
 from data.dataset import TrainRecDataset, ECFTrainRecDataset
 from eval.eval import FullEvaluator
 from explanations.fairness_utily import ALPHAS, multiply_mask, TOP_K_RECOMMENDATIONS, compute_rec_gap, \
-    hellinger_distance, jensen_shannon_distance
+    hellinger_distance, jensen_shannon_distance, kl_divergence
 from wandb_conf import ENTITY_NAME, PROJECT_NAME
 
 parser = argparse.ArgumentParser(description='Start an exhaustive counterfactual experiment')
@@ -116,8 +117,26 @@ tag_matrix[[item_tag_idxs_csv.item_idx, item_tag_idxs_csv.tag_idx]] = 1.
 
 # Normalizing row-wise
 tag_matrix /= tag_matrix.sum(-1)[:, None]
-tag_matrix = tag_matrix.to('cuda')
 
+# --- Preparing the Training History Distribution --- #
+
+train_data = pd.read_csv(f"../data/{conf['dataset']}/processed_dataset/listening_history_train.csv")[
+    ['user_idx', 'item_idx']]
+train_mtx = scipy.sparse.csr_matrix(
+    (torch.ones(len(train_data), dtype=torch.int16), (train_data.user_idx, train_data.item_idx)),
+    shape=(alg.n_users, alg.n_items))
+
+train_users_tag_frequencies = train_mtx @ tag_matrix
+user_n_items = train_mtx.sum(-1).A
+train_users_tag_frequencies /= user_n_items
+
+tag_matrix = tag_matrix.to('cuda')
+train_users_tag_frequencies = torch.tensor(train_users_tag_frequencies, device='cuda')
+
+# Smoothening the train frequency distribution (eq. 7 in Calibrated Recommendation by H.Steck) beta = 0.01
+train_users_tag_frequencies = .01 / n_tags + (1 - .01) * train_users_tag_frequencies
+
+del train_data, train_mtx, user_n_items, tag_csv, item_tag_idxs_csv
 # --- Counting the Prototypes --- #
 
 n_prototypes = None
@@ -151,8 +170,15 @@ with torch.no_grad():
             multiplication_mask[prototype_index] = alpha
 
             # Accumulating per-group frequencies
-            group_0_frequencies = torch.zeros(n_tags, dtype=torch.float).to('cuda')
-            group_1_frequencies = torch.zeros(n_tags, dtype=torch.float).to('cuda')
+            all_hellinger = torch.zeros(1, dtype=torch.float, device='cuda')
+            group_0_hellinger = torch.zeros(1, dtype=torch.float, device='cuda')
+            group_1_hellinger = torch.zeros(1, dtype=torch.float, device='cuda')
+            all_jsd = torch.zeros(1, dtype=torch.float, device='cuda')
+            group_0_jsd = torch.zeros(1, dtype=torch.float, device='cuda')
+            group_1_jsd = torch.zeros(1, dtype=torch.float, device='cuda')
+            all_kl = torch.zeros(1, dtype=torch.float, device='cuda')
+            group_0_kl = torch.zeros(1, dtype=torch.float, device='cuda')
+            group_1_kl = torch.zeros(1, dtype=torch.float, device='cuda')
 
             i_idxs = torch.arange(val_loader.dataset.n_items).to('cuda')
 
@@ -246,36 +272,105 @@ with torch.no_grad():
                 batch_user_tags_frequency = batch_user_top_items_tags.sum(1)  # [batch_size, n_tags]
                 batch_user_tags_frequency /= TOP_K_RECOMMENDATIONS
 
-                batch_user_group = user_to_user_group[u_idxs]
+                batch_user_train_tags_frequency = train_users_tag_frequencies[u_idxs]
+                # Smoothening the batch frequency (Eq.5 in Calibrated Recommendation by H. Steck) alpha =.01
+                batch_user_tags_frequency = .01 * batch_user_train_tags_frequency + (
+                        1 - .01) * batch_user_tags_frequency
 
+                # JSD, Hellinger & KL
+
+                batch_hellinger = hellinger_distance(batch_user_tags_frequency,
+                                                     batch_user_train_tags_frequency)  # [batch_size]
+                batch_jsd = jensen_shannon_distance(batch_user_tags_frequency,
+                                                    batch_user_train_tags_frequency)  # [batch_size]
+
+                batch_kl = kl_divergence(batch_user_train_tags_frequency, batch_user_tags_frequency)
+
+                all_jsd += batch_jsd.sum()
+                all_hellinger += batch_hellinger.sum()
+                all_kl += batch_kl.sum()
+
+                batch_user_group = user_to_user_group[u_idxs]
                 # Assuming two groups
                 is_group_1_mask = batch_user_group.bool()
 
-                group_0_frequencies += batch_user_tags_frequency[~is_group_1_mask].sum(0)  # [n_tags]
-                group_1_frequencies += batch_user_tags_frequency[is_group_1_mask].sum(0)
+                group_0_hellinger += batch_hellinger[~is_group_1_mask].sum()
+                group_1_hellinger += batch_hellinger[is_group_1_mask].sum()
 
-            group_0_frequencies /= n_users_group_0
-            group_1_frequencies /= n_users_group_1
+                group_0_jsd += batch_jsd[~is_group_1_mask].sum()
+                group_1_jsd += batch_jsd[is_group_1_mask].sum()
+
+                group_0_kl += batch_kl[~is_group_1_mask].sum()
+                group_1_kl += batch_kl[is_group_1_mask].sum()
+
+            group_0_hellinger /= n_users_group_0
+            group_0_jsd /= n_users_group_0
+            group_0_kl /= n_users_group_0
+            group_1_hellinger /= n_users_group_1
+            group_1_jsd /= n_users_group_1
+            group_1_kl /= n_users_group_1
+
+            all_jsd /= (n_users_group_1 + n_users_group_0)
+            all_hellinger /= (n_users_group_1 + n_users_group_0)
+            all_kl /= (n_users_group_1 + n_users_group_0)
 
             val_result_dict = val_evaluator.get_results()
+            val_result_dict['hellinger_distance'] = all_hellinger.item()
+            val_result_dict['group_0_hellinger_distance'] = group_0_hellinger.item()
+            val_result_dict['group_1_hellinger_distance'] = group_1_hellinger.item()
+            val_result_dict['jensen_shannon_distance'] = all_jsd.item()
+            val_result_dict['group_0_jensen_shannon_distance'] = group_0_jsd.item()
+            val_result_dict['group_1_jensen_shannon_distance'] = group_1_jsd.item()
+            val_result_dict['kl_divergence'] = all_kl.item()
+            val_result_dict['group_0_kl_divergence'] = group_0_kl.item()
+            val_result_dict['group_1_kl_divergence'] = group_1_kl.item()
 
             # Placing results into a dictionary
 
             dict_key = (prototype_index, alpha)
-            dict_value = [val_result_dict['ndcg@10'], val_result_dict['group_0_ndcg@10'],
-                          val_result_dict['group_1_ndcg@10'], compute_rec_gap(val_result_dict),
-                          hellinger_distance(group_0_frequencies, group_1_frequencies).item(),
-                          jensen_shannon_distance(group_0_frequencies, group_1_frequencies).item()]
+            dict_value = [val_result_dict['ndcg@10'],
+                          val_result_dict['group_0_ndcg@10'],
+                          val_result_dict['group_1_ndcg@10'],
+                          compute_rec_gap(val_result_dict),
+                          val_result_dict['hellinger_distance'],
+                          val_result_dict['group_0_hellinger_distance'],
+                          val_result_dict['group_1_hellinger_distance'],
+                          compute_rec_gap(val_result_dict, 'hellinger_distance'),
+                          val_result_dict['jensen_shannon_distance'],
+                          val_result_dict['group_0_jensen_shannon_distance'],
+                          val_result_dict['group_1_jensen_shannon_distance'],
+                          compute_rec_gap(val_result_dict, 'jensen_shannon_distance'),
+                          val_result_dict['kl_divergence'],
+                          val_result_dict['group_0_kl_divergence'],
+                          val_result_dict['group_1_kl_divergence'],
+                          compute_rec_gap(val_result_dict, 'kl_divergence')
+                          ]
+
             exhaustive_search_results[dict_key] = dict_value
-            exhaustive_search_results_raw[dict_key] = [val_result_dict, group_0_frequencies.cpu().numpy(),
-                                                       group_1_frequencies.cpu().numpy()]
+            exhaustive_search_results_raw[dict_key] = [val_result_dict]
+
+    # Last Update considers no changes
 
 # Save dictionaries
-
-df = pd.DataFrame.from_dict(exhaustive_search_results, orient='index',
-                            columns=['ndcg@10', 'group_0_ndcg@10', 'group_1_ndcg@10', 'recgap(ndcg@10)',
-                                     'hellinger_distance', 'jensen_shannon_distance'])
-
-df.to_csv(f"./{conf['alg']}_{conf['dataset']}_results.csv")
 with open(f"./{conf['alg']}_{conf['dataset']}_results_raw.pkl", 'wb') as out_file:
     pickle.dump(exhaustive_search_results_raw, out_file)
+
+df = pd.DataFrame.from_dict(exhaustive_search_results, orient='index',
+                            columns=['ndcg@10',
+                                     'group_0_ndcg@10',
+                                     'group_1_ndcg@10',
+                                     'recgap(ndcg@10)',
+                                     'hellinger_distance',
+                                     'group_0_hellinger_distance',
+                                     'group_1_hellinger_distance',
+                                     'recgap(hellinger_distance)',
+                                     'jensen_shannon_distance',
+                                     'group_0_jensen_shannon_distance',
+                                     'group_1_jensen_shannon_distance',
+                                     'recgap(jensen_shannon_distance)',
+                                     'kl_divergence',
+                                     'group_0_kl_divergence',
+                                     'group_1_kl_divergence',
+                                     'recgap(kl_divergence)'])
+
+df.to_csv(f"./{conf['alg']}_{conf['dataset']}_results.csv")

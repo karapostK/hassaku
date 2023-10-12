@@ -1,25 +1,23 @@
 import pandas as pd
 import torch
 from torch import Tensor
-from torch.nn.functional import kl_div
 
 ALPHAS = [.9, .7, .5, .3, .1, .0]
 TOP_K_RECOMMENDATIONS = 10
 
 
-def compute_rec_gap(results_dict: dict, metric_name: str = 'ndcg', k: int = 10, return_perc: bool = True):
+def compute_rec_gap(results_dict: dict, metric_name: str = 'ndcg@10', return_perc: bool = True):
     """
     Easy function to compute the percentage difference, respect to the mean, of the difference between group_0 and group_1
     NB. The value returned has a sign and might also return a negative percentage. This represents the case where group_1
     receives better values than group 0.
     @param results_dict:
     @param metric_name:
-    @param k:
     @param return_perc:
     @return:
     """
-    metric_key = metric_name + "@" + str(k)
-    rec_gap = (results_dict['group_0_' + metric_key] - results_dict['group_1_' + metric_key]) / results_dict[metric_key]
+    rec_gap = (results_dict['group_0_' + metric_name] - results_dict['group_1_' + metric_name]) / results_dict[
+        metric_name]
     if return_perc:
         return 100 * rec_gap
     else:
@@ -118,7 +116,7 @@ def multiply_mask(in_repr, multiplication_mask, in_idxs=None, only_idxs=None):
 
 
 def hellinger_distance(p, q):
-    summed = (torch.square(torch.sqrt(p) - torch.sqrt(q))).sum()
+    summed = (torch.square(torch.sqrt(p) - torch.sqrt(q))).sum(-1)
     return 0.5 * torch.sqrt(summed)
 
 
@@ -126,21 +124,23 @@ def jensen_shannon_distance(p, q):
     # https://en.wikipedia.org/wiki/Jensen%E2%80%93Shannon_divergence
     m_log = (0.5 * (p + q)).log()
 
-    first_term = (p * (p.log() - m_log)).sum()
-    second_term = (q * (q.log() - m_log)).sum()
+    first_term = (p * (p.log() - m_log)).sum(-1)
+    second_term = (q * (q.log() - m_log)).sum(-1)
     jsd = 0.5 * (first_term + second_term)
     return torch.sqrt(jsd)
 
 
+def kl_divergence(true_p, model_p):
+    # https://dl.acm.org/doi/pdf/10.1145/3240323.3240372
+    return (true_p * (true_p.log() - model_p.log())).sum(-1)
 
 
-
-
-class NeuralSort (torch.nn.Module):
+class NeuralSort(torch.nn.Module):
     """
     Code is from https://github.com/ermongroup/neuralsort/blob/master/pytorch/neuralsort.py.
     Paper is STOCHASTIC OPTIMIZATION OF SORTING NETWORKS VIA CONTINUOUS RELAXATIONS by Grover et al. ICLR 2019
     """
+
     def __init__(self, tau=1.0, hard=False):
         super(NeuralSort, self).__init__()
         self.hard = hard
@@ -162,7 +162,7 @@ class NeuralSort (torch.nn.Module):
                    ).type(torch.cuda.FloatTensor)
         C = torch.matmul(scores, scaling.unsqueeze(0))
 
-        P_max = (C-B).permute(0, 2, 1)
+        P_max = (C - B).permute(0, 2, 1)
         sm = torch.nn.Softmax(-1)
         P_hat = sm(P_max / self.tau)
 
@@ -176,5 +176,5 @@ class NeuralSort (torch.nn.Module):
             brc_idx = torch.stack((b_idx, r_idx, c_idx))
 
             P[brc_idx[0], brc_idx[1], brc_idx[2]] = 1
-            P_hat = (P-P_hat).detach() + P_hat
+            P_hat = (P - P_hat).detach() + P_hat
         return P_hat
