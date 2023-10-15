@@ -103,3 +103,26 @@ def ndcg_at_k_batch(logits: torch.Tensor, y_true: torch.Tensor, k: int = 10, agg
         return NDCG.sum()
     else:
         return NDCG
+
+
+def weight_ndcg_at_k_batch(y_true: torch.Tensor, k: int = 10):
+    """
+    Computes the weight for NDCG@10, similar to eq.9 in https://ieeexplore.ieee.org/document/9514867
+    w(pos,K) =  1/(IDCG@K * log(pos+1))
+    :param y_true: the true prediction. Shape is (batch_size, *)
+    :param k: cut-off value
+
+    :return: wNDCG@k. Shape is (batch_size,)
+    """
+    # Assuming that y_true is the same across the batch
+    # Assuming there is at least one 0 and one 1 in y_true
+    y_true_single = y_true[0]
+
+    n_pos = int(torch.where(y_true_single == 0)[0][0])
+
+    discount_template = 1. / torch.log2(torch.arange(2, k + 2).float())
+    discount_template = discount_template.to(y_true.device)
+
+    weight = discount_template / discount_template[:n_pos].sum()
+
+    return weight

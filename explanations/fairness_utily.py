@@ -1,6 +1,21 @@
+import glob
+import json
+import os
+import socket
+from pathlib import Path
+
 import pandas as pd
 import torch
-from torch import Tensor
+import wandb
+from paramiko import SSHClient
+from scp import SCPClient
+from torch import Tensor, nn
+from torch.utils import data
+
+from conf.conf_parser import parse_conf_file
+from eval.metrics import weight_ndcg_at_k_batch
+from train.rec_losses import RecommenderSystemLoss
+from wandb_conf import ENTITY_NAME, PROJECT_NAME
 
 ALPHAS = [.9, .7, .5, .3, .1, .0]
 TOP_K_RECOMMENDATIONS = 10
@@ -178,3 +193,168 @@ class NeuralSort(torch.nn.Module):
             P[brc_idx[0], brc_idx[1], brc_idx[2]] = 1
             P_hat = (P - P_hat).detach() + P_hat
         return P_hat
+
+
+class ConcatDataLoaders:
+    def __init__(self, dataloader_0: torch.utils.data.DataLoader, dataloader_1: torch.utils.data.DataLoader):
+        self.dataloader_0 = dataloader_0
+        self.dataloader_1 = dataloader_1
+        self.zipped_dataloader = None
+
+    def __iter__(self):
+        self.zipped_dataloader = zip(self.dataloader_0, self.dataloader_1)
+        return self
+
+    def __next__(self):
+        (u_idxs_0, i_idxs_0, labels_0), (u_idxs_1, i_idxs_1, labels_1) = self.zipped_dataloader.__next__()
+        u_idxs = torch.cat([u_idxs_0, u_idxs_1], dim=0)
+        i_idxs = torch.cat([i_idxs_0, i_idxs_1], dim=0)
+        labels = torch.cat([labels_0, labels_1], dim=0)
+        return u_idxs, i_idxs, labels
+
+    def __len__(self):
+        return min(len(self.dataloader_0), len(self.dataloader_1))
+
+
+class RecGapLoss(RecommenderSystemLoss):
+    """
+    N.B. This class assumes only 2 groups.
+    N.B. This class is based on NDCG. However, other ranking functions could be used.
+    """
+
+    def __init__(self, n_items: int = None, aggregator: str = 'mean', train_neg_strategy: str = 'uniform',
+                 neg_train: int = 4, fairness_at_k: int = 10, start_group_1_in_batch: int = None,
+                 neural_sort_tau: float = 1.):
+        """
+        @param fairness_at_k: k at which the recgap is measured
+        @param start_group_1_in_batch: index, within the batch, where the first person starts.
+        @param neural_sort_tau: tau to be used in the NeuralSort layer.
+        """
+        assert start_group_1_in_batch is not None
+        super().__init__(n_items, aggregator, train_neg_strategy, neg_train)
+        self.fairness_at_k = fairness_at_k
+        self.start_group_1_in_batch = start_group_1_in_batch  # Used to split the batch in two.
+        self.neural_sort_tau = neural_sort_tau
+
+        self.neural_sort_layer = NeuralSort(self.neural_sort_tau)
+        self.mse_loss = nn.MSELoss()
+
+    @staticmethod
+    def build_from_conf(conf: dict, dataset):
+        return RecGapLoss(fairness_at_k=conf['fairness_at_k'],
+                          start_group_1_in_batch=conf['start_group_1_in_batch'],
+                          neural_sort_tau=conf['neural_sort_tau'],
+                          )
+
+    def compute_loss(self, scores, labels):
+        assert scores.shape[-1] >= self.fairness_at_k, \
+            f"There are not too many items in the batch. It is not possible to measure recgap at k={self.fairness_at_k}"
+
+        # Compute Metric-dependent weight
+        weight_ndcg = weight_ndcg_at_k_batch(labels, k=self.fairness_at_k)
+
+        # Compute the Hit Function
+        # The formula of approx hit works in the following way:
+        # 1) All 'true' items are in the first positions of the scores vector.
+        # 2) The [:,None,:] broadcasting allows us to apply the label mask to each row of the sorting matrix
+        # This is also equivalent on zeroing out the right side of the matrix. We only care about the positions of the
+        # true items anyway
+        # 3) Multiplication is carried out (again we care only about the true items)
+        # 4) We sum over the last column, which is equivalent to see if we 'hit' the item at that position.
+        approx_sorting_matrix = self.neural_sort_layer(scores)  # [batch_size, n_scores (positions), n_scores (index) ]
+        apporx_hit = (approx_sorting_matrix * labels[:, None, :]).sum(-1)  # [batch_size, n_scores (positions)]
+
+        # Compute the NDCG by multiplying the weights
+        apporx_hit = apporx_hit[:, :self.fairness_at_k]
+        approx_ndcg = (apporx_hit * weight_ndcg).sum(-1)
+
+        # Compute RecGap as difference of two means
+        # || group_0_ndcg - group_1_ndcg||^2
+
+        group_0_approx_ndcg = approx_ndcg[:self.start_group_1_in_batch]
+        group_1_approx_ndcg = approx_ndcg[self.start_group_1_in_batch:]
+
+        avg_group_0_ndcg = group_0_approx_ndcg.mean()
+        avg_group_1_ndcg = group_1_approx_ndcg.mean()
+
+        rec_gap_loss = self.mse_loss(avg_group_0_ndcg, avg_group_1_ndcg)
+
+        return rec_gap_loss
+
+
+def fetch_best_in_sweep(sweep_id, good_faith=True, preamble_path=None):
+    """
+    It returns the configuration of the best model of a specific sweep.
+    However, since private wandb projects can only be accessed by 1 member, sharing of the models is basically impossible.
+    The alternative, with good_faith=True it simply looks at the local directory with that specific sweep and hopes there is a model there.
+    If there are multiple models then it raises an error.
+
+    @param sweep_id:
+    @param good_faith:  whether to look only at local folders or not
+    @param preamble_path: if specified it will replace the part that precedes hassaku (e.g. /home/giovanni/hassaku... -> /something_else/hassaku/....
+    @return:
+    """
+    if good_faith:
+        sweep_path = glob.glob(f'../saved_models/*/sweeps/{sweep_id}')
+        if len(sweep_path) > 1:
+            raise ValueError('There should not be two sweeps with the same id')
+        sweep_path = sweep_path[0]
+        best_run_path = os.listdir(sweep_path)
+        if len(best_run_path) > 1:
+            raise ValueError('There are more than 1 runs in the project, which one is the best?')
+
+        best_run_path = best_run_path[0]
+        best_run_config = parse_conf_file(os.path.join(sweep_path, best_run_path, 'conf.yml'))
+
+    else:
+        api = wandb.Api()
+        sweep = api.sweep(f"{ENTITY_NAME}/{PROJECT_NAME}/{sweep_id}")
+
+        best_run = sweep.best_run()
+        best_run_host = best_run.metadata['host']
+        best_run_config = json.loads(best_run.json_config)
+        if '_items' in best_run_config:
+            best_run_config = best_run_config['_items']['value']
+        else:
+            best_run_config = {k: v['value'] for k, v in best_run_config.items()}
+
+        best_run_model_path = best_run_config['model_path']
+        print('Best Run Model Path: ', best_run_model_path)
+
+        # Create base directory if absent
+        local_path = os.path.join('..', best_run_model_path)
+        current_host = socket.gethostname()
+
+        if not os.path.isdir(local_path):
+            Path(local_path).mkdir(parents=True, exist_ok=True)
+
+            if current_host != best_run_host:
+                print(f'Importing Model from {best_run_host}')
+                # Moving the best model to local directory
+                # N.B. Assuming same username
+                with SSHClient() as ssh:
+                    ssh.load_system_host_keys()
+                    ssh.connect(best_run_host)
+
+                    with SCPClient(ssh.get_transport()) as scp:
+                        # enoughcool4hardcoding
+                        dir_path = "hassaku"
+                        if best_run_host == 'passionpit.cp.jku.at':
+                            dir_path = os.path.join(dir_path, "PycharmProjects")
+
+                        scp.get(remote_path=os.path.join(dir_path, best_run_model_path),
+                                local_path=os.path.dirname(local_path),
+                                recursive=True)
+            else:
+                raise FileNotFoundError(f"The model should be local but it was not found! Path is: {local_path}")
+
+    if preamble_path:
+        pre, post = best_run_config['dataset_path'].split('hassaku/', 1)
+        best_run_config['dataset_path'] = os.path.join(preamble_path, 'hassaku', post)
+        pre, post = best_run_config['data_path'].split('hassaku/', 1)
+        best_run_config['data_path'] = os.path.join(preamble_path, 'hassaku', post)
+
+    # Running from non-main folder
+    best_run_config['model_save_path'] = os.path.join('..', best_run_config['model_save_path'])
+    best_run_config['model_path'] = os.path.join('..', best_run_config['model_path'])
+    return best_run_config

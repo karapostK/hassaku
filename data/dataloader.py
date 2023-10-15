@@ -33,6 +33,7 @@ class NegativeSampler(InteractionSampler):
             f'<{neg_sampling_strategy}> is not a valid negative sampling strategy!'
         assert squashing_factor_pop_sampling >= 0, 'Squashing factor for popularity sampling should be positive!'
 
+        self.dataset = train_dataset
         self.n_neg = n_neg
         self.neg_sampling_strategy = neg_sampling_strategy
         self.squashing_factor_pop_sampling = squashing_factor_pop_sampling
@@ -115,7 +116,7 @@ class TrainDataLoader(DataLoader):
             item_neg_idxs[mask] = sampled_items
 
             for i in range(batch_size):
-                mask[i] = np.isin(item_neg_idxs[i], self.dataset.sampling_matrix[user_idxs[i]].indices,
+                mask[i] = np.isin(item_neg_idxs[i], self.interaction_sampler.dataset.sampling_matrix[user_idxs[i]].indices,
                                   assume_unique=True)
             to_resample = mask.sum()
 

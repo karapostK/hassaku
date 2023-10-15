@@ -165,7 +165,7 @@ class SGDBasedRecommenderAlgorithm(RecommenderAlgorithm, ABC, nn.Module):
         print('Model Loaded')
 
 
-class PrototypeWrapper(ABC, SGDBasedRecommenderAlgorithm):
+class PrototypeWrapper(SGDBasedRecommenderAlgorithm):
     """
     Simple class to augment existing ones with methods related to Prototypes.
     """
