@@ -10,7 +10,7 @@ from torch import nn
 from torch.nn import functional as F
 from torch.utils import data
 
-from algorithms.base_classes import SGDBasedRecommenderAlgorithm, RecommenderAlgorithm
+from algorithms.base_classes import SGDBasedRecommenderAlgorithm, RecommenderAlgorithm, PrototypeWrapper
 from explanations.utils import protomfs_post_val, protomf_post_val_light
 from train.utils import general_weight_init
 
@@ -184,7 +184,7 @@ class SGDMatrixFactorization(SGDBasedRecommenderAlgorithm):
                                       conf['use_item_bias'], conf['use_global_bias'])
 
 
-class ACF(SGDBasedRecommenderAlgorithm):
+class ACF(PrototypeWrapper):
     """
     Implements Anchor-based Collaborative Filtering by Barkan et al.(https://dl.acm.org/doi/pdf/10.1145/3459637.3482056)
     """
@@ -317,7 +317,7 @@ class ACF(SGDBasedRecommenderAlgorithm):
             curr_epoch)
 
 
-class UProtoMF(SGDBasedRecommenderAlgorithm):
+class UProtoMF(PrototypeWrapper):
     """
     Implements the ProtoMF model with user prototypes as defined in https://dl.acm.org/doi/abs/10.1145/3523227.3546756
     """
@@ -419,7 +419,7 @@ class UProtoMF(SGDBasedRecommenderAlgorithm):
             curr_epoch)
 
 
-class IProtoMF(SGDBasedRecommenderAlgorithm):
+class IProtoMF(PrototypeWrapper):
     """
     Implements the ProtoMF model with item prototypes as defined in https://dl.acm.org/doi/abs/10.1145/3523227.3546756
     """
@@ -523,7 +523,7 @@ class IProtoMF(SGDBasedRecommenderAlgorithm):
             curr_epoch)
 
 
-class UIProtoMF(SGDBasedRecommenderAlgorithm):
+class UIProtoMF(PrototypeWrapper):
     """
     Implements the ProtoMF model with item and user prototypes as defined in https://dl.acm.org/doi/abs/10.1145/3523227.3546756
     """
@@ -876,7 +876,7 @@ class UIProtoMFsCombine(RecommenderAlgorithm):
         return self.uprotomfs.predict(u_idxs, i_idxs) + self.iprotomfs.predict(u_idxs, i_idxs)
 
 
-class ECF(SGDBasedRecommenderAlgorithm):
+class ECF(PrototypeWrapper):
     """
     Implements the ECF model from https://dl.acm.org/doi/10.1145/3543507.3583303
     """
@@ -1032,7 +1032,7 @@ class ECF(SGDBasedRecommenderAlgorithm):
         sparse_dots = (a_i.unsqueeze(-2) * x_i).sum(dim=-1)
         return sparse_dots
 
-    def get_item_representations_pre_tune(self) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+    def get_item_representations_pre_tune(self, i_idxs) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
         i_embed = self.item_embed.weight  # [n_items, embed_d]
         x_tildes = compute_cosine_sim(i_embed, self.clusters)  # [n_items, n_clusters]
         return x_tildes
