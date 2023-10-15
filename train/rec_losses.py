@@ -22,6 +22,16 @@ class RecommenderSystemLoss(ABC):
     def compute_loss(self, logits: torch.Tensor, labels: torch.Tensor):
         pass
 
+    @staticmethod
+    def build_from_conf(conf: dict, dataset):
+        rec_loss_class = RecommenderSystemLossesEnum[conf['rec_loss']]
+        return rec_loss_class.value(
+            n_items=dataset.n_items,
+            aggregator=conf['loss_aggregator'],
+            train_neg_strategy=conf['train_neg_strategy'],
+            neg_train=conf['neg_train']
+        )
+
 
 class RecBinaryCrossEntropy(RecommenderSystemLoss):
     # Todo: this loss should be adjusted according to the sampling probability

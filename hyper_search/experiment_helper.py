@@ -16,6 +16,7 @@ from data.dataset import TrainRecDataset
 from eval.eval import evaluate_recommender_algorithm
 from hyper_search.hyper_params import alg_data_param
 from hyper_search.utils import KeepOnlyTopModels
+from train.rec_losses import RecommenderSystemLoss
 from train.trainer import Trainer
 from utilities.utils import generate_id, reproducible
 from wandb_conf import PROJECT_NAME, ENTITY_NAME, WANDB_API_KEY_PATH
@@ -38,7 +39,8 @@ def tune_training(conf: dict):
         alg = alg.value.build_from_conf(conf, train_loader.dataset)
 
         # Validation happens within the Trainer
-        trainer = Trainer(alg, train_loader, val_loader, conf)
+        rec_loss = RecommenderSystemLoss.build_from_conf(conf, train_loader.dataset)
+        trainer = Trainer(alg, train_loader, val_loader, rec_loss, conf)
         metrics_values = trainer.fit()
 
     elif issubclass(alg.value, SparseMatrixBasedRecommenderAlgorithm):

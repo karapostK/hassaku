@@ -9,7 +9,7 @@ from tqdm import trange, tqdm
 
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm
 from eval.eval import evaluate_recommender_algorithm
-from train.rec_losses import RecommenderSystemLossesEnum
+from train.rec_losses import RecommenderSystemLoss
 
 
 class Trainer:
@@ -17,12 +17,14 @@ class Trainer:
     def __init__(self, model: SGDBasedRecommenderAlgorithm,
                  train_loader: data.DataLoader,
                  val_loader: data.DataLoader,
+                 rec_loss: RecommenderSystemLoss,
                  conf: dict):
         """
         Train and Evaluate the model.
         :param model: Model to train
         :param train_loader: Training DataLoader
         :param val_loader: Validation DataLoader
+        :param rec_loss: Recommendation Loss
         :param conf: Configuration dictionary
         """
 
@@ -38,11 +40,7 @@ class Trainer:
             self.pointer_to_model = self.model.module
         self.model.to(self.device)
 
-        self.rec_loss = RecommenderSystemLossesEnum[conf['rec_loss']].value(n_items=train_loader.dataset.n_items,
-                                                                            aggregator=conf['loss_aggregator'],
-                                                                            train_neg_strategy=conf[
-                                                                                'train_neg_strategy'],
-                                                                            neg_train=conf['neg_train'])
+        self.rec_loss = rec_loss
 
         self.lr = conf['lr']
         self.wd = conf['wd']

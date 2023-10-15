@@ -8,6 +8,7 @@ from conf.conf_parser import parse_conf, save_yaml
 from data.data_utils import DatasetsEnum, get_dataloader
 from data.dataset import TrainRecDataset
 from eval.eval import evaluate_recommender_algorithm
+from train.rec_losses import RecommenderSystemLoss
 from train.trainer import Trainer
 from utilities.utils import reproducible
 from wandb_conf import KEEP_TOP_RUNS
@@ -47,7 +48,8 @@ def train_val_agent():
         alg = alg.value.build_from_conf(conf, train_loader.dataset)
 
         # Validation happens within the Trainer
-        trainer = Trainer(alg, train_loader, val_loader, conf)
+        rec_loss = RecommenderSystemLoss.build_from_conf(conf, train_loader.dataset)
+        trainer = Trainer(alg, train_loader, val_loader, rec_loss, conf)
         trainer.fit()
 
     elif issubclass(alg.value, SparseMatrixBasedRecommenderAlgorithm):
