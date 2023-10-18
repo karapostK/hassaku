@@ -15,8 +15,8 @@ from data.data_utils import DatasetsEnum, get_dataloader
 from data.dataloader import NegativeSampler, TrainDataLoader
 from data.dataset import TrainRecDataset, ECFTrainRecDataset
 from data.dataset import TrainUserRecDataset
-from eval.eval import evaluate_recommender_algorithm
-from explanations.fairness_utily import ConcatDataLoaders, RecGapLoss,fetch_best_in_sweep
+from eval.eval import evaluate_recommender_algorithm, FullEvaluator
+from explanations.fairness_utily import ConcatDataLoaders, RecGapLoss, fetch_best_in_sweep
 from explanations.proto_algs_knobs import TunePrototypeRecModel
 
 from train.trainer import Trainer
@@ -36,7 +36,7 @@ args = parser.parse_args()
 sweep_id = args.sweep_id
 fairness_conf_path = args.fairness_conf_path
 
-run_conf = fetch_best_in_sweep(sweep_id, good_faith=False, preamble_path='~/PycharmProjects')
+run_conf = fetch_best_in_sweep(sweep_id, good_faith=True, preamble_path='~/PycharmProjects')
 
 # --- Fairness Configuration --- #
 fair_conf = parse_conf_file(fairness_conf_path)
@@ -97,11 +97,14 @@ wandb.init(project=PROJECT_NAME, entity=ENTITY_NAME, config=fair_conf, tags=[run
            group=f"{run_conf['alg']} - {run_conf['dataset']} - train/val", name=fair_conf['time_run'],
            job_type='train/val')
 
-metrics_values = evaluate_recommender_algorithm(alg, val_loader, verbose=True)
+#todo: change evaluator
+evaluator = FullEvaluator(aggr_by_group=True, n_groups=val_loader.dataset.n_user_groups,
+                                  user_to_user_group=val_loader.dataset.user_to_user_group)
+metrics_values = evaluate_recommender_algorithm(alg, val_loader,evaluator, verbose=True)
 
 wandb.log({**metrics_values,
            'weights': wandb.Histogram(torch.zeros(20))})  # TODO: logging the weights doesnt work for every step.
-
+print('Starting NDCG@10: ', metrics_values['ndcg@10'])
 # --- Starting the experiment --- #
 
 tuner = TunePrototypeRecModel(prototype_model=alg, entity_name=fair_conf['entity_name'], type_perturb='add')

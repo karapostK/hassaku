@@ -8,7 +8,7 @@ from algorithms.sgd_alg import ECF
 from conf.conf_parser import parse_conf_file, parse_conf, save_yaml
 from data.data_utils import DatasetsEnum, get_dataloader
 from data.dataset import TrainRecDataset, ECFTrainRecDataset
-from eval.eval import evaluate_recommender_algorithm
+from eval.eval import evaluate_recommender_algorithm, FullEvaluator
 from train.rec_losses import RecommenderSystemLoss
 from train.trainer import Trainer
 from utilities.utils import reproducible
@@ -50,7 +50,9 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union
         # -- Training --
         alg.fit(train_dataset.sampling_matrix)
         # -- Validation --
-        metrics_values = evaluate_recommender_algorithm(alg, val_loader,
+        evaluator = FullEvaluator(aggr_by_group=True, n_groups=val_loader.dataset.n_user_groups,
+                                  user_to_user_group=val_loader.dataset.user_to_user_group)
+        metrics_values = evaluate_recommender_algorithm(alg, val_loader, evaluator,
                                                         verbose=conf['running_settings']['batch_verbose'])
 
         alg.save_model_to_path(conf['model_path'])
@@ -64,7 +66,9 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union
         val_loader = get_dataloader(conf, 'val')
 
         alg = alg.value.build_from_conf(conf, train_dataset)
-        metrics_values = evaluate_recommender_algorithm(alg, val_loader,
+        evaluator = FullEvaluator(aggr_by_group=True, n_groups=val_loader.dataset.n_user_groups,
+                                  user_to_user_group=val_loader.dataset.user_to_user_group)
+        metrics_values = evaluate_recommender_algorithm(alg, val_loader, evaluator,
                                                         verbose=conf['running_settings']['batch_verbose'])
 
         save_yaml(conf['model_path'], conf)
@@ -103,7 +107,10 @@ def run_test(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union[str,
 
     alg.load_model_from_path(conf['model_path'])
 
-    metrics_values = evaluate_recommender_algorithm(alg, test_loader, verbose=conf['running_settings']['batch_verbose'])
+    evaluator = FullEvaluator(aggr_by_group=True, n_groups=test_loader.dataset.n_user_groups,
+                              user_to_user_group=test_loader.dataset.user_to_user_group)
+    metrics_values = evaluate_recommender_algorithm(alg, test_loader, evaluator,
+                                                    verbose=conf['running_settings']['batch_verbose'])
     if conf['running_settings']['use_wandb']:
         wandb.log(metrics_values, step=0)
         wandb.finish()

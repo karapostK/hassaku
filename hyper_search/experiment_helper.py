@@ -13,7 +13,7 @@ from algorithms.naive_algs import PopularItems
 from conf.conf_parser import parse_conf
 from data.data_utils import DatasetsEnum, get_dataloader
 from data.dataset import TrainRecDataset
-from eval.eval import evaluate_recommender_algorithm
+from eval.eval import evaluate_recommender_algorithm, FullEvaluator
 from hyper_search.hyper_params import alg_data_param
 from hyper_search.utils import KeepOnlyTopModels
 from train.rec_losses import RecommenderSystemLoss
@@ -52,7 +52,10 @@ def tune_training(conf: dict):
         # -- Training --
         alg.fit(train_dataset.sampling_matrix)
         # -- Validation --
-        metrics_values = evaluate_recommender_algorithm(alg, val_loader)
+        evaluator = FullEvaluator(aggr_by_group=True, n_groups=val_loader.dataset.n_user_groups,
+                                  user_to_user_group=val_loader.dataset.user_to_user_group)
+        metrics_values = evaluate_recommender_algorithm(alg, val_loader, evaluator,
+                                                        verbose=conf['running_settings']['batch_verbose'])
         metrics_values['max_optimizing_metric'] = metrics_values[conf['optimizing_metric']]
 
         alg.save_model_to_path(conf['model_path'])
@@ -67,7 +70,10 @@ def tune_training(conf: dict):
         val_loader = get_dataloader(conf, 'val')
 
         alg = alg.value.build_from_conf(conf, train_dataset)
-        metrics_values = evaluate_recommender_algorithm(alg, val_loader)
+        evaluator = FullEvaluator(aggr_by_group=True, n_groups=val_loader.dataset.n_user_groups,
+                                  user_to_user_group=val_loader.dataset.user_to_user_group)
+        metrics_values = evaluate_recommender_algorithm(alg, val_loader, evaluator,
+                                                        verbose=conf['running_settings']['batch_verbose'])
         metrics_values['max_optimizing_metric'] = metrics_values[conf['optimizing_metric']]
 
         session.report(metrics_values)
@@ -187,7 +193,9 @@ def run_test(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: dict, **kwargs):
 
     alg.load_model_from_path(conf['model_path'])
 
-    metrics_values = evaluate_recommender_algorithm(alg, test_loader)
+    evaluator = FullEvaluator(aggr_by_group=True, n_groups=test_loader.dataset.n_user_groups,
+                              user_to_user_group=test_loader.dataset.user_to_user_group)
+    metrics_values = evaluate_recommender_algorithm(alg, test_loader, evaluator)
     wandb.log(metrics_values)
     wandb.finish()
 

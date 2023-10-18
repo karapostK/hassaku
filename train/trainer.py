@@ -8,7 +8,7 @@ from torch.utils import data
 from tqdm import trange, tqdm
 
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm
-from eval.eval import evaluate_recommender_algorithm
+from eval.eval import evaluate_recommender_algorithm, FullEvaluator
 from train.rec_losses import RecommenderSystemLoss
 
 
@@ -194,6 +194,8 @@ class Trainer:
         self.model.eval()
         print('Validation started')
 
-        metrics_values = evaluate_recommender_algorithm(self.pointer_to_model, self.val_loader, self.device,
+        evaluator = FullEvaluator(aggr_by_group=True, n_groups=self.val_loader.dataset.n_user_groups,
+                                  user_to_user_group=self.val_loader.dataset.user_to_user_group)
+        metrics_values = evaluate_recommender_algorithm(self.pointer_to_model, self.val_loader, evaluator, self.device,
                                                         self.batch_verbose)
         return metrics_values

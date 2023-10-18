@@ -98,13 +98,11 @@ class FullEvaluator:
         return metrics_dict
 
 
-def evaluate_recommender_algorithm(alg: RecommenderAlgorithm, eval_loader: DataLoader, device='cpu', verbose=False):
+def evaluate_recommender_algorithm(alg: RecommenderAlgorithm, eval_loader: DataLoader, evaluator: FullEvaluator,
+                                   device='cpu', verbose=False):
     """
     Evaluation procedure that calls FullEvaluator on the dataset.
     """
-
-    evaluator = FullEvaluator(aggr_by_group=True, n_groups=eval_loader.dataset.n_user_groups,
-                              user_to_user_group=eval_loader.dataset.user_to_user_group)
 
     if verbose:
         iterator = tqdm(eval_loader)

@@ -7,7 +7,7 @@ from algorithms.base_classes import SGDBasedRecommenderAlgorithm, SparseMatrixBa
 from conf.conf_parser import parse_conf, save_yaml
 from data.data_utils import DatasetsEnum, get_dataloader
 from data.dataset import TrainRecDataset
-from eval.eval import evaluate_recommender_algorithm
+from eval.eval import evaluate_recommender_algorithm, FullEvaluator
 from train.rec_losses import RecommenderSystemLoss
 from train.trainer import Trainer
 from utilities.utils import reproducible
@@ -60,7 +60,9 @@ def train_val_agent():
         # -- Training --
         alg.fit(train_dataset.sampling_matrix)
         # -- Validation --
-        metrics_values = evaluate_recommender_algorithm(alg, val_loader,
+        evaluator = FullEvaluator(aggr_by_group=True, n_groups=val_loader.dataset.n_user_groups,
+                                  user_to_user_group=val_loader.dataset.user_to_user_group)
+        metrics_values = evaluate_recommender_algorithm(alg, val_loader, evaluator,
                                                         verbose=conf['running_settings']['batch_verbose'])
 
         alg.save_model_to_path(conf['model_path'])
@@ -71,7 +73,9 @@ def train_val_agent():
         val_loader = get_dataloader(conf, 'val')
 
         alg = alg.value.build_from_conf(conf, train_dataset)
-        metrics_values = evaluate_recommender_algorithm(alg, val_loader,
+        evaluator = FullEvaluator(aggr_by_group=True, n_groups=val_loader.dataset.n_user_groups,
+                                  user_to_user_group=val_loader.dataset.user_to_user_group)
+        metrics_values = evaluate_recommender_algorithm(alg, val_loader, evaluator,
                                                         verbose=conf['running_settings']['batch_verbose'])
         wandb.log(metrics_values)
     else:
