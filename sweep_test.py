@@ -1,11 +1,5 @@
 import argparse
-import json
 import os
-import socket
-from pathlib import Path
-
-from paramiko import SSHClient
-from scp import SCPClient
 
 import wandb
 from algorithms.algorithms_utils import AlgorithmsEnum
@@ -13,68 +7,22 @@ from algorithms.naive_algs import PopularItems
 from algorithms.sgd_alg import ECF
 from data.data_utils import get_dataloader, DatasetsEnum
 from data.dataset import TrainRecDataset, ECFTrainRecDataset
-from eval.eval import evaluate_recommender_algorithm
+from eval.eval import evaluate_recommender_algorithm, FullEvaluator
+from explanations.fairness_utily import fetch_best_in_sweep, FullEvaluatorCalibration, build_user_and_item_tag_matrix
 from wandb_conf import ENTITY_NAME, PROJECT_NAME
 
 parser = argparse.ArgumentParser(description='Start a test experiment')
 
-parser.add_argument('--sweep_id', '-s', type=str, help='ID of the sweep', )
+parser.add_argument('--sweep_id', '-s', type=str, help='ID of the sweep')
+parser.add_argument('--measure_calibration', '-c', help='Whether to compute calibration metrics as well',
+                    action='store_true', default=False)
 
 args = parser.parse_args()
 
 sweep_id = args.sweep_id
+measure_calibration = args.measure_calibration
 
-api = wandb.Api()
-sweep = api.sweep(f"{ENTITY_NAME}/{PROJECT_NAME}/{sweep_id}")
-
-best_run = sweep.best_run()
-best_run_host = best_run.metadata['host']
-best_run_config = json.loads(best_run.json_config)
-if '_items' in best_run_config:
-    best_run_config = best_run_config['_items']['value']
-else:
-    best_run_config = {k: v['value'] for k, v in best_run_config.items()}
-
-best_run_model_path = best_run_config['model_path']
-print('Best Run Model Path: ', best_run_model_path)
-
-# Create base directory if absent
-local_path = best_run_model_path
-current_host = socket.gethostname()
-
-if not os.path.isdir(local_path):
-    Path(local_path).mkdir(parents=True, exist_ok=True)
-
-    if current_host != best_run_host:
-        print(f'Importing Model from {best_run_host}')
-        # Moving the best model to local directory
-        # N.B. Assuming same username
-        with SSHClient() as ssh:
-            ssh.load_system_host_keys()
-            ssh.connect(best_run_host)
-
-            with SCPClient(ssh.get_transport()) as scp:
-                # enoughcool4hardcoding
-                dir_path = "hassaku"
-                if best_run_host == 'passionpit.cp.jku.at':
-                    dir_path = os.path.join(dir_path, "PycharmProjects")
-
-                scp.get(remote_path=os.path.join(dir_path, best_run_model_path), local_path=os.path.dirname(local_path),
-                        recursive=True)
-    else:
-        raise FileNotFoundError(f"The model should be local but it was not found! Path is: {local_path}")
-
-# Adjusting dataset_path configuration for testing #enoughcool4hardcoding
-if current_host == 'passionpit.cp.jku.at' and best_run_host != 'passionpit.cp.jku.at':
-    # From RK to passionpit, adding PycharmProjects
-    dataset_path = Path(best_run_config['dataset_path'])
-    path_parts = list(dataset_path.parts[:3]) + ['PycharmProjects'] + list(dataset_path.parts[3:])
-    best_run_config['dataset_path'] = os.path.join(*path_parts)
-elif current_host != 'passionpit.cp.jku.at' and best_run_host == 'passionpit.cp.jku.at':
-    # From passionpit to RK, removing PycharmProjects
-    dataset_path = Path(best_run_config['dataset_path'])
-    path_parts = list(dataset_path.parts[:3]) + list(dataset_path.parts[4:])
-    best_run_config['dataset_path'] = os.path.join(*path_parts)
+best_run_config = fetch_best_in_sweep(sweep_id, good_faith=False, project_base_directory='.',preamble_path='~/PycharmProjects',wandb_entitiy_name='karapost')
 
 # Model is now local
 # Carry out Test
@@ -84,9 +32,10 @@ conf = best_run_config
 print('Starting Test')
 print(f'Algorithm is {alg.name} - Dataset is {dataset.name}')
 
-wandb.init(project=PROJECT_NAME, entity=ENTITY_NAME, config=conf, tags=[alg.name, dataset.name],
+wandb.init(project='protofair', entity='karapost', config=conf, tags=[alg.name, dataset.name],
            group=f'{alg.name} - {dataset.name} - test', name=conf['time_run'], job_type='test', reinit=True)
 
+conf['running_settings']['eval_n_workers'] = 0
 test_loader = get_dataloader(conf, 'test')
 
 if alg.value == PopularItems:
@@ -99,7 +48,18 @@ else:
 
 alg.load_model_from_path(conf['model_path'])
 
-metrics_values = evaluate_recommender_algorithm(alg, test_loader, verbose=conf['running_settings']['batch_verbose'])
+
+if measure_calibration:
+    user_tag_mtx, item_tag_mtx = build_user_and_item_tag_matrix(os.path.join(conf['data_path'], conf['dataset']))
+    evaluator = FullEvaluatorCalibration(item_tag_mtx, user_tag_mtx, aggr_by_group=True,
+                                         n_groups=test_loader.dataset.n_user_groups,
+                                         user_to_user_group=test_loader.dataset.user_to_user_group)
+else:
+
+    evaluator = FullEvaluator(aggr_by_group=True, n_groups=test_loader.dataset.n_user_groups,
+                              user_to_user_group=test_loader.dataset.user_to_user_group)
+metrics_values = evaluate_recommender_algorithm(alg, test_loader, evaluator,
+                                                verbose=conf['running_settings']['batch_verbose'])
 
 wandb.log(metrics_values, step=0)
 wandb.finish()

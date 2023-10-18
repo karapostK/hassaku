@@ -4,15 +4,18 @@ import os
 import socket
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
+import scipy
 import torch
-import wandb
 from paramiko import SSHClient
 from scp import SCPClient
 from torch import Tensor, nn
 from torch.utils import data
 
+import wandb
 from conf.conf_parser import parse_conf_file
+from eval.eval import FullEvaluator
 from eval.metrics import weight_ndcg_at_k_batch
 from train.rec_losses import RecommenderSystemLoss
 from wandb_conf import ENTITY_NAME, PROJECT_NAME
@@ -282,7 +285,8 @@ class RecGapLoss(RecommenderSystemLoss):
         return rec_gap_loss
 
 
-def fetch_best_in_sweep(sweep_id, good_faith=True, preamble_path=None):
+def fetch_best_in_sweep(sweep_id, good_faith=True, preamble_path=None, project_base_directory: str = '..',
+                        wandb_entitiy_name=ENTITY_NAME, wandb_project_name=PROJECT_NAME):
     """
     It returns the configuration of the best model of a specific sweep.
     However, since private wandb projects can only be accessed by 1 member, sharing of the models is basically impossible.
@@ -292,10 +296,11 @@ def fetch_best_in_sweep(sweep_id, good_faith=True, preamble_path=None):
     @param sweep_id:
     @param good_faith:  whether to look only at local folders or not
     @param preamble_path: if specified it will replace the part that precedes hassaku (e.g. /home/giovanni/hassaku... -> /something_else/hassaku/....
+    @param project_base_directory: where is the project directory (either relative from where the code is running or in absolute path.
     @return:
     """
     if good_faith:
-        sweep_path = glob.glob(f'../saved_models/*/sweeps/{sweep_id}')
+        sweep_path = glob.glob(f'{project_base_directory}/saved_models/*/sweeps/{sweep_id}')
         if len(sweep_path) > 1:
             raise ValueError('There should not be two sweeps with the same id')
         sweep_path = sweep_path[0]
@@ -308,7 +313,7 @@ def fetch_best_in_sweep(sweep_id, good_faith=True, preamble_path=None):
 
     else:
         api = wandb.Api()
-        sweep = api.sweep(f"{ENTITY_NAME}/{PROJECT_NAME}/{sweep_id}")
+        sweep = api.sweep(f"{wandb_entitiy_name}/{wandb_project_name}/{sweep_id}")
 
         best_run = sweep.best_run()
         best_run_host = best_run.metadata['host']
@@ -322,7 +327,7 @@ def fetch_best_in_sweep(sweep_id, good_faith=True, preamble_path=None):
         print('Best Run Model Path: ', best_run_model_path)
 
         # Create base directory if absent
-        local_path = os.path.join('..', best_run_model_path)
+        local_path = os.path.join(project_base_directory, best_run_model_path)
         current_host = socket.gethostname()
 
         if not os.path.isdir(local_path):
@@ -355,6 +360,128 @@ def fetch_best_in_sweep(sweep_id, good_faith=True, preamble_path=None):
         best_run_config['data_path'] = os.path.join(preamble_path, 'hassaku', post)
 
     # Running from non-main folder
-    best_run_config['model_save_path'] = os.path.join('..', best_run_config['model_save_path'])
-    best_run_config['model_path'] = os.path.join('..', best_run_config['model_path'])
+    best_run_config['model_save_path'] = os.path.join(project_base_directory, best_run_config['model_save_path'])
+    best_run_config['model_path'] = os.path.join(project_base_directory, best_run_config['model_path'])
     return best_run_config
+
+
+def build_user_and_item_tag_matrix(path_to_dataset_folder: str = './data/ml1m', alpha_smoothening: float = .01):
+    """
+    Builds the user x tag matrix and the item x tag matrix on the training data. For the user x tag matrix, each row
+    represents the tag frequencies in that user train data. N.B. As multiple genres/tags can appear in an item, we
+    perform row-wise normalization across the item-tag matrix **before** constructing the user-tag matrix. E.g. when a
+    user watches a Western movie then their propensity (~in frequency) towards Western movies is increased by 1. When a
+    user watches a Western|Sci-Fi movie then their propensity is split by both genres, effectively increasing 0.5 for
+    Western and 0.5 for Sci-Fi. This procedure is equivalent to Harald Steck "Calibrated Recommendations" RecSys 2018.
+    @param path_to_dataset_folder: Path to the dataset folder. Code will automatically fill out the rest,
+    @param alpha_smoothening: alpha value used to smoothen the training distribution (eq. 7 in H. Steck Calibrated Recommendations)
+    @return:
+        - user_tag_matrix
+        - item_tag_matrix
+    """
+
+    assert 0 <= alpha_smoothening <= 1, 'Alpha value out of bounds'
+
+    # Load Tag Matrix & Training Data
+    tag_csv = pd.read_csv(os.path.join(path_to_dataset_folder, 'processed_dataset/tag_idxs.csv'))
+    item_tag_idxs_csv = pd.read_csv(os.path.join(path_to_dataset_folder, 'processed_dataset/item_tag_idxs.csv'))
+    train_data = pd.read_csv(os.path.join(path_to_dataset_folder, 'processed_dataset/listening_history_train.csv'))[
+        ['user_idx', 'item_idx']]
+
+    n_tags = len(tag_csv)
+    n_items = train_data.item_idx.nunique()
+    n_users = train_data.user_idx.nunique()
+
+    # Building Tag Matrix
+    tag_matrix = torch.zeros(size=(n_items, n_tags), dtype=torch.float16)
+    tag_matrix[[item_tag_idxs_csv.item_idx, item_tag_idxs_csv.tag_idx]] = 1.
+
+    # Normalizing row-wise
+    tag_matrix /= tag_matrix.sum(-1)[:, None]
+
+    # Building Train Matrix
+    train_mtx = scipy.sparse.csr_matrix(
+        (torch.ones(len(train_data), dtype=torch.int16), (train_data.user_idx, train_data.item_idx)),
+        shape=(n_users, n_items))
+
+    # Computing User-Tag Frequencies
+    users_tag_frequencies = train_mtx @ tag_matrix
+    n_items_per_user = train_mtx.sum(-1).A
+    users_tag_frequencies /= n_items_per_user
+
+    # Smoothening (eq.7)
+    users_tag_frequencies = alpha_smoothening / n_tags + (1 - alpha_smoothening) * users_tag_frequencies
+
+    return torch.tensor(users_tag_frequencies), torch.tensor(tag_matrix)
+
+
+class FullEvaluatorCalibration(FullEvaluator):
+    """
+    Used to assess calibration like metrics (e.g. kl divergence, jensen-shannon distance, and hellinger distance)
+    """
+
+    CALIBRATION_K_VALUES = [10, 20, 50, 100]
+
+    def __init__(self, item_tag_matrix: torch.Tensor, train_user_tag_mtx: torch.Tensor, beta_smoothening: float = .01,
+                 aggr_by_group: bool = True,
+                 n_groups: int = 0,
+                 user_to_user_group: dict = None):
+        """
+        @param item_tag_matrix: Tensor of shape [n_items,n_tags]. The i-th row is the normalized distribution of the
+        i-th item over the n_tags.
+        @param train_user_tag_mtx: Tensor of shape [n_users,n_tags]. The i-th row is the frequency distribution of the
+        i-th user over the n_tags.
+        @param beta_smoothening: Smoothening value applied to the recommendation. See Eq. 5 in H. Steck Calibrated Recommendations
+        """
+        assert 0 <= beta_smoothening <= 1, 'Beta value out of bounds'
+        super().__init__(aggr_by_group, n_groups, user_to_user_group)
+
+        self.train_user_tag_mtx = train_user_tag_mtx
+        self.item_tag_matrix = item_tag_matrix
+        self.beta_smoothening = beta_smoothening
+
+    def eval_batch(self, u_idxs: torch.Tensor, logits: torch.Tensor, y_true: torch.Tensor):
+        super().eval_batch(u_idxs, logits, y_true)
+
+        self.train_user_tag_mtx = self.train_user_tag_mtx.to(logits.device)
+        self.item_tag_matrix = self.item_tag_matrix.to(logits.device)
+
+        k_sorted_values = sorted(FullEvaluatorCalibration.CALIBRATION_K_VALUES, reverse=True)
+        k_max = k_sorted_values[0]
+        idx_topk = logits.topk(k=k_max).indices
+
+        batch_user_train_tags_frequency = self.train_user_tag_mtx[u_idxs]
+
+        for k in k_sorted_values:
+            idx_topk = idx_topk[:, :k]
+
+            # Compute recommendation distribution
+            batch_user_top_items_tags = self.item_tag_matrix[idx_topk]  # [batch_size, top_k, n_tags]
+            batch_user_tags_frequency = batch_user_top_items_tags.sum(1)  # [batch_size, n_tags]
+            batch_user_tags_frequency /= k
+
+            # Smoothening the batch frequency (Eq.5 in Calibrated Recommendation by H. Steck)
+            batch_user_tags_frequency = self.beta_smoothening * batch_user_train_tags_frequency + (
+                    1 - self.beta_smoothening) * batch_user_tags_frequency
+
+            for metric_name, metric in \
+                    zip(
+                        ['hellinger_distance@{}', 'jensen_shannon_distance@{}', 'kl_divergence@{}'],
+                        [hellinger_distance, jensen_shannon_distance, kl_divergence]
+                    ):
+                # Shape is [batch_size].
+                # N.B. kl divergence requires the target distribution as first argument!
+                metric_result = metric(batch_user_train_tags_frequency, batch_user_tags_frequency).detach()
+
+                # Collect results for 'all' users group
+                self.group_metrics[-1][metric_name.format(k)] += \
+                    metric_result.sum().item() if self.aggr_by_group else metric_result
+
+                # Collect results for specific user groups
+                if self.n_groups > 0:
+                    batch_user_to_user_groups = self.user_to_user_group[u_idxs]
+                    for group_idx in range(self.n_groups):
+                        group_metric_idx = np.where(batch_user_to_user_groups == group_idx)
+                        group_metric = metric_result[group_metric_idx]
+                        self.group_metrics[group_idx][metric_name.format(k)] += \
+                            group_metric.sum().item() if self.aggr_by_group else group_metric
