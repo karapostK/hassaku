@@ -16,9 +16,9 @@ from data.dataloader import NegativeSampler, TrainDataLoader
 from data.dataset import TrainRecDataset, ECFTrainRecDataset
 from data.dataset import TrainUserRecDataset
 from eval.eval import evaluate_recommender_algorithm, FullEvaluator
-from explanations.fairness_utily import ConcatDataLoaders, RecGapLoss, fetch_best_in_sweep
+from explanations.fairness_utily import ConcatDataLoaders, RecGapLoss, fetch_best_in_sweep, \
+    build_user_and_item_tag_matrix
 from explanations.proto_algs_knobs import TunePrototypeRecModel
-
 from train.trainer import Trainer
 from utilities.utils import reproducible, generate_id
 from wandb_conf import ENTITY_NAME
@@ -97,10 +97,11 @@ wandb.init(project=PROJECT_NAME, entity=ENTITY_NAME, config=fair_conf, tags=[run
            group=f"{run_conf['alg']} - {run_conf['dataset']} - train/val", name=fair_conf['time_run'],
            job_type='train/val')
 
-#todo: change evaluator
+user_tag_mtx, item_tag_mtx = build_user_and_item_tag_matrix(os.path.join(run_conf['data_path'], run_conf['dataset']))
+
 evaluator = FullEvaluator(aggr_by_group=True, n_groups=val_loader.dataset.n_user_groups,
-                                  user_to_user_group=val_loader.dataset.user_to_user_group)
-metrics_values = evaluate_recommender_algorithm(alg, val_loader,evaluator, verbose=True)
+                          user_to_user_group=val_loader.dataset.user_to_user_group)
+metrics_values = evaluate_recommender_algorithm(alg, val_loader, evaluator, verbose=True)
 
 wandb.log({**metrics_values,
            'weights': wandb.Histogram(torch.zeros(20))})  # TODO: logging the weights doesnt work for every step.

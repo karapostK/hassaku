@@ -121,7 +121,7 @@ with torch.no_grad():
                 if prototype_index - alg.n_clusters >= 0:
                     sub_mask = multiplication_mask[alg.n_clusters:]
 
-                    i_repr_middle = alg.get_item_representations_pre_tune()
+                    i_repr_middle = alg.get_item_representations_pre_tune(None)
                     i_repr_middle = multiply_mask(i_repr_middle, sub_mask)
                     i_repr_new = alg.get_item_representations_post_tune(i_repr_middle)
                 else:

@@ -1033,6 +1033,7 @@ class ECF(PrototypeWrapper):
         return sparse_dots
 
     def get_item_representations_pre_tune(self, i_idxs) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        # i_idxs is ignored
         i_embed = self.item_embed.weight  # [n_items, embed_d]
         x_tildes = compute_cosine_sim(i_embed, self.clusters)  # [n_items, n_clusters]
         return x_tildes
