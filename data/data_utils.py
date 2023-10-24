@@ -38,6 +38,7 @@ class DatasetsEnum(enum.Enum):
     ml10m = enum.auto()
     amazonvid2018 = enum.auto()
     lfm2b2020 = enum.auto()
+    deliveryherosg = enum.auto()
 
 
 def print_and_log(log_file, n_lhs, n_users, n_items, text):
