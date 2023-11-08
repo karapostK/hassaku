@@ -269,25 +269,21 @@ class ACF(PrototypeWrapper):
     def get_item_representations_pre_tune(self, i_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
         i_embed = self.item_embed(i_idxs)  # [batch_size, (n_neg + 1), embedding_dim]
         c_i_unnorm = i_embed @ self.anchors.T  # [batch_size, (n_neg + 1), n_anchors]
-        return c_i_unnorm
-
-    def get_item_representations_post_tune(self, c_i_unnorm: torch.Tensor) -> Union[
-        torch.Tensor, Tuple[torch.Tensor, ...]]:
         c_i = nn.Softmax(dim=-1)(c_i_unnorm)  # [batch_size, (n_neg + 1), n_anchors]
+        return c_i
 
+    def get_item_representations_post_tune(self, c_i: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
         i_anc = c_i @ self.anchors  # [batch_size, (n_neg + 1), embedding_dim]
-        return i_anc, c_i, c_i_unnorm
+        return i_anc, c_i, None
 
     def get_user_representations_pre_tune(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
         u_embed = self.user_embed(u_idxs)  # [batch_size, embedding_dim]
         c_u = u_embed @ self.anchors.T  # [batch_size, n_anchors]
+        c_u = nn.Softmax(dim=-1)(c_u)
         return c_u
 
     def get_user_representations_post_tune(self, c_u: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
-        c_u = nn.Softmax(dim=-1)(c_u)
-
         u_anc = c_u @ self.anchors  # [batch_size, embedding_dim]
-
         return u_anc
 
     def get_and_reset_other_loss(self) -> Dict:
@@ -1035,41 +1031,33 @@ class ECF(PrototypeWrapper):
     def get_item_representations_pre_tune(self, i_idxs) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
         # i_idxs is ignored
         i_embed = self.item_embed.weight  # [n_items, embed_d]
-        x_tildes = compute_cosine_sim(i_embed, self.clusters)  # [n_items, n_clusters]
-        return x_tildes
+        self._x_tildes = compute_cosine_sim(i_embed, self.clusters)  # [n_items, n_clusters]
 
-    def get_item_representations_post_tune(self, x_tildes: torch.Tensor) -> Union[
-        torch.Tensor, Tuple[torch.Tensor, ...]]:
-
-        assert x_tildes.shape[0] == self.n_items
-        self._x_tildes = x_tildes
         # Creating exact mask
-        m = torch.zeros_like(x_tildes).to(x_tildes.device)
-        x_tilde_tops = x_tildes.topk(self.top_m).indices  # [n_items, top_m]
-        dummy_column = torch.arange(self.n_items)[:, None].to(x_tildes.device)
+        m = torch.zeros_like(self._x_tildes).to(self._x_tildes.device)
+        x_tilde_tops = self._x_tildes.topk(self.top_m).indices  # [n_items, top_m]
+        dummy_column = torch.arange(self.n_items)[:, None].to(self._x_tildes.device)
         m[dummy_column, x_tilde_tops] = True
 
         # Creating approximated mask
-        m_tilde = nn.Softmax(dim=-1)(x_tildes / self.temp_masking)  # [n_items, n_clusters]
+        m_tilde = nn.Softmax(dim=-1)(self._x_tildes / self.temp_masking)  # [n_items, n_clusters]
 
         # Putting together the masks
         m_hat = m_tilde + (m - m_tilde).detach()
 
         # Building affiliation vector
-        self._xs = nn.Sigmoid()(x_tildes) * m_hat
+        self._xs = nn.Sigmoid()(self._x_tildes) * m_hat
         return self._xs, self.item_embed.weight
+
+    def get_item_representations_post_tune(self, i_repr: torch.Tensor) -> Union[
+        torch.Tensor, Tuple[torch.Tensor, ...]]:
+
+        return i_repr
 
     def get_user_representations_pre_tune(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
         y_u = self.interaction_matrix[u_idxs]  # [batch_size, n_items]
         u_embed = self.user_embed(u_idxs)
         a_tilde = y_u @ self._x_tildes  # [batch_size, n_clusters]
-
-        return a_tilde, u_embed
-
-    def get_user_representations_post_tune(self, u_repr: torch.Tensor) -> Union[
-        torch.Tensor, Tuple[torch.Tensor, ...]]:
-
-        a_tilde, u_embed = u_repr
 
         # Creating exact mask
         m = torch.zeros_like(a_tilde).to(a_tilde.device)
@@ -1087,6 +1075,9 @@ class ECF(PrototypeWrapper):
         a_i = nn.Sigmoid()(a_tilde) * m_hat
 
         return a_i, u_embed
+
+    def get_user_representations_post_tune(self, u_repr: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        return u_repr
 
     def get_and_reset_other_loss(self) -> Dict:
         acc_ts, acc_ind, acc_cf = self._acc_ts, self._acc_ind, self._acc_cf

@@ -6,7 +6,6 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm, RecommenderAlgorithm
-from eval.eval_utils import K_VALUES
 from eval.metrics import precision_at_k_batch, ndcg_at_k_batch, recall_at_k_batch
 from utilities.utils import log_info_results
 
@@ -17,6 +16,7 @@ class FullEvaluator:
     updates the internal results. After the last batch, get_results will return the metrics. It holds a special group
     with index -1 that is the "ALL" user group.
     """
+    K_VALUES = [1, 3, 5, 10, 20, 50, 100]  # K value for the evaluation metrics
 
     def __init__(self, aggr_by_group: bool = True, n_groups: int = 0, user_to_user_group: dict = None):
         """
@@ -38,6 +38,18 @@ class FullEvaluator:
         self.group_metrics = defaultdict(lambda: defaultdict(int) if self.aggr_by_group else defaultdict(list))
         self.n_entries = defaultdict(int)
 
+    def _add_entry_to_dict(self, group_idx, metric_name, metric_result):
+        if self.aggr_by_group:
+            self.group_metrics[group_idx][metric_name] += metric_result.sum().item()
+        else:
+            self.group_metrics[group_idx][metric_name] += metric_result
+
+    def get_n_groups(self):
+        return self.n_groups
+
+    def get_user_to_user_group(self):
+        return self.user_to_user_group
+
     def eval_batch(self, u_idxs: torch.Tensor, logits: torch.Tensor, y_true: torch.Tensor):
         """
         :param u_idxs: User indexes. Shape is (batch_size).
@@ -45,38 +57,45 @@ class FullEvaluator:
         :param y_true: the true prediction. Shape is (batch_size, n_items)
         """
 
-        k_sorted_values = sorted(K_VALUES, reverse=True)
+        k_sorted_values = sorted(self.K_VALUES, reverse=True)
         k_max = k_sorted_values[0]
         idx_topk = logits.topk(k=k_max).indices
-        self.n_entries[-1] += logits.shape[0]
-        group_n_entries = defaultdict(int)
 
+        # -- Counting per Group Entries --- #
+        self.n_entries[-1] += logits.shape[0]
+        if self.get_n_groups() > 0:
+            batch_user_to_user_groups = self.get_user_to_user_group()[u_idxs]
+            for group_idx in range(self.n_groups):
+                group_metric_idx = torch.where(batch_user_to_user_groups == group_idx)[0]
+                self.n_entries[group_idx] += len(group_metric_idx)
+
+        # -- Computing the Metrics --- #
         for k in k_sorted_values:
             idx_topk = idx_topk[:, :k]
+
             for metric_name, metric in \
-                    zip(['precision@{}', 'recall@{}', 'ndcg@{}'],
-                        [precision_at_k_batch, recall_at_k_batch,
-                         ndcg_at_k_batch]):
-                metric_result = metric(logits=logits, y_true=y_true, k=k, aggr_sum=False,
-                                       idx_topk=idx_topk).detach()  # Shape is (batch_size)
+                    zip(
+                        ['precision@{}', 'recall@{}', 'ndcg@{}'],
+                        [precision_at_k_batch, recall_at_k_batch, ndcg_at_k_batch]
+                    ):
+
+                metric_result = metric(
+                    logits=logits,
+                    y_true=y_true,
+                    k=k,
+                    aggr_sum=False,
+                    idx_topk=idx_topk
+                ).detach()  # Shape is (batch_size)
 
                 # Collect results for 'all' users group
-                self.group_metrics[-1][metric_name.format(k)] += \
-                    metric_result.sum().item() if self.aggr_by_group else metric_result
+                self._add_entry_to_dict(-1, metric_name.format(k), metric_result)
 
                 # Collect results for specific user groups
-                if self.n_groups > 0:
-                    batch_user_to_user_groups = self.user_to_user_group[u_idxs]
+                if self.get_n_groups() > 0:
+                    batch_user_to_user_groups = self.get_user_to_user_group()[u_idxs]
                     for group_idx in range(self.n_groups):
                         group_metric_idx = np.where(batch_user_to_user_groups == group_idx)
-                        group_metric = metric_result[group_metric_idx]
-                        self.group_metrics[group_idx][metric_name.format(k)] += \
-                            group_metric.sum().item() if self.aggr_by_group else group_metric
-                        group_n_entries[group_idx] = group_metric.shape[0]
-
-        if self.n_groups > 0:
-            for group_idx in range(self.n_groups):
-                self.n_entries[group_idx] += group_n_entries[group_idx]
+                        self._add_entry_to_dict(group_idx, metric_name.format(k), metric_result[group_metric_idx])
 
     def get_results(self):
         metrics_dict = dict()
