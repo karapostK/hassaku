@@ -8,8 +8,8 @@ from algorithms.sgd_alg import ECF
 from data.data_utils import get_dataloader, DatasetsEnum
 from data.dataset import TrainRecDataset, ECFTrainRecDataset
 from eval.eval import evaluate_recommender_algorithm, FullEvaluator
-from explanations.fairness_utily import fetch_best_in_sweep, FullEvaluatorCalibration, build_user_and_item_tag_matrix
-from wandb_conf import ENTITY_NAME, PROJECT_NAME
+from explanations.fairness_utily import fetch_best_in_sweep, build_user_and_item_tag_matrix, \
+    build_user_and_item_pop_matrix, FullEvaluatorCalibrationDecorator
 
 parser = argparse.ArgumentParser(description='Start a test experiment')
 
@@ -22,7 +22,8 @@ args = parser.parse_args()
 sweep_id = args.sweep_id
 measure_calibration = args.measure_calibration
 
-best_run_config = fetch_best_in_sweep(sweep_id, good_faith=False, project_base_directory='.',preamble_path='~/PycharmProjects',wandb_entitiy_name='karapost')
+best_run_config = fetch_best_in_sweep(sweep_id, good_faith=False, project_base_directory='.',
+                                      preamble_path='~/PycharmProjects', wandb_entitiy_name='karapost')
 
 # Model is now local
 # Carry out Test
@@ -48,16 +49,16 @@ else:
 
 alg.load_model_from_path(conf['model_path'])
 
+evaluator = FullEvaluator(aggr_by_group=True, n_groups=test_loader.dataset.n_user_groups,
+                          user_to_user_group=test_loader.dataset.user_to_user_group)
 
 if measure_calibration:
     user_tag_mtx, item_tag_mtx = build_user_and_item_tag_matrix(os.path.join(conf['data_path'], conf['dataset']))
-    evaluator = FullEvaluatorCalibration(item_tag_mtx, user_tag_mtx, aggr_by_group=True,
-                                         n_groups=test_loader.dataset.n_user_groups,
-                                         user_to_user_group=test_loader.dataset.user_to_user_group)
-else:
+    user_pop_mtx, item_pop_mtx = build_user_and_item_pop_matrix(os.path.join(conf['data_path'], conf['dataset']))
 
-    evaluator = FullEvaluator(aggr_by_group=True, n_groups=test_loader.dataset.n_user_groups,
-                              user_to_user_group=test_loader.dataset.user_to_user_group)
+    evaluator = FullEvaluatorCalibrationDecorator(evaluator, item_tag_mtx, user_tag_mtx, metric_name_prefix='tag')
+    evaluator = FullEvaluatorCalibrationDecorator(evaluator, item_pop_mtx, user_pop_mtx, metric_name_prefix='pop')
+
 metrics_values = evaluate_recommender_algorithm(alg, test_loader, evaluator,
                                                 verbose=conf['running_settings']['batch_verbose'])
 

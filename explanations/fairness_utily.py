@@ -8,12 +8,12 @@ import numpy as np
 import pandas as pd
 import scipy
 import torch
+import wandb
 from paramiko import SSHClient
 from scp import SCPClient
 from torch import Tensor, nn
 from torch.utils import data
 
-import wandb
 from conf.conf_parser import parse_conf_file
 from eval.eval import FullEvaluator
 from eval.metrics import weight_ndcg_at_k_batch
@@ -119,13 +119,13 @@ def multiply_mask(in_repr, multiplication_mask, in_idxs=None, only_idxs=None):
     @return:
     """
 
-    if in_idxs is None and only_idxs is None:
+    if only_idxs is None:
         entry_mask = torch.ones(in_repr.shape[0], dtype=bool).to(in_repr.device)
-    elif in_idxs is not None and only_idxs is not None:
-        entry_mask = torch.isin(only_idxs, in_idxs, assume_unique=True)
     else:
-        raise ValueError(
-            'Having one of in_indxs and only_indxs None while the other is set is not a valid combination!')
+        if in_idxs is None:
+            raise ValueError('in_idxs cannot be None if only_idxs is not None')
+        else:
+            entry_mask = torch.isin(in_idxs, only_idxs, assume_unique=True)
 
     new_in_repr = in_repr.clone()
     new_in_repr[entry_mask] *= multiplication_mask
@@ -412,51 +412,144 @@ def build_user_and_item_tag_matrix(path_to_dataset_folder: str = './data/ml1m', 
     # Smoothening (eq.7)
     users_tag_frequencies = alpha_smoothening / n_tags + (1 - alpha_smoothening) * users_tag_frequencies
 
-    return torch.tensor(users_tag_frequencies), torch.tensor(tag_matrix)
+    return torch.tensor(users_tag_frequencies), tag_matrix
 
 
-class FullEvaluatorCalibration(FullEvaluator):
+def build_user_and_item_pop_matrix(path_to_dataset_folder: str = './data/ml1m', alpha_smoothening: float = .01):
     """
-    Used to assess calibration like metrics (e.g. kl divergence, jensen-shannon distance, and hellinger distance)
+    Builds the user x pop matrix and the item x pop matrix on the training data.
+    @param path_to_dataset_folder: Path to the dataset folder. Code will automatically fill out the rest,
+    @param alpha_smoothening: alpha value used to smoothen the training distribution (eq. 7 in H. Steck Calibrated Recommendations)
+    @return:
+        - user_pop_matrix
+        - item_pop_matrix
+    """
+
+    assert 0 <= alpha_smoothening <= 1, 'Alpha value out of bounds'
+
+    # Load Training Data
+    train_data = pd.read_csv(os.path.join(path_to_dataset_folder, 'processed_dataset/listening_history_train.csv'))[
+        ['user_idx', 'item_idx']]
+
+    n_items = train_data.item_idx.nunique()
+    n_users = train_data.user_idx.nunique()
+
+    train_mtx = scipy.sparse.csr_matrix(
+        (torch.ones(len(train_data), dtype=torch.float), (train_data.user_idx, train_data.item_idx)),
+        shape=(n_users, n_items))
+
+    # --- Compute Item Popularity Matrix --- #
+    items_pop = train_mtx.sum(0).A1  # [n_items]
+    pop_mass = items_pop.sum()  # total number of interactions
+    items_pop /= pop_mass
+
+    sorted_items_idxs = np.argsort(-items_pop)
+    items_pop = items_pop[sorted_items_idxs]
+
+    mtx_row_idx = []
+    mtx_col_idx = []
+
+    curr_pop_top_mass = 0
+
+    for ite_idx, item_idx, item_pop in zip(range(len(items_pop)), sorted_items_idxs, items_pop):
+
+        if curr_pop_top_mass >= .2:
+            last_pop_idx = ite_idx
+            break
+
+        curr_pop_top_mass += item_pop
+        mtx_row_idx.append(item_idx)
+        mtx_col_idx.append(0)
+
+    curr_pop_bottom_mass = 0
+    for ite_idx, item_idx, item_pop in zip(reversed(range(len(items_pop))), reversed(sorted_items_idxs),
+                                           reversed(items_pop)):
+        if curr_pop_bottom_mass >= .2:
+            first_niche_idx = ite_idx
+            break
+
+        curr_pop_bottom_mass += item_pop
+        mtx_row_idx.append(item_idx)
+        mtx_col_idx.append(2)
+
+    # All the others
+    mtx_row_idx += list(sorted_items_idxs[last_pop_idx:first_niche_idx + 1])
+    mtx_col_idx += [1] * (first_niche_idx - last_pop_idx + 1)
+
+    # Creating the Matrix
+    items_pop_mtx = scipy.sparse.csr_matrix(
+        (torch.ones(len(mtx_row_idx), dtype=torch.float), (mtx_row_idx, mtx_col_idx)),
+        shape=(n_items, 3))
+
+    # --- Computing User Popularity --- #
+
+    user_pop_mtx = train_mtx @ items_pop_mtx
+    user_pop_mtx = user_pop_mtx.A
+    user_pop_mtx /= user_pop_mtx.sum(-1)[:, None]
+
+    # Smoothening (eq.7)
+    user_pop_mtx = alpha_smoothening / 3 + (1 - alpha_smoothening) * user_pop_mtx
+
+    return torch.tensor(user_pop_mtx), torch.tensor(items_pop_mtx.A)
+
+
+class FullEvaluatorCalibrationDecorator(FullEvaluator):
+    """
+    Class that decorates a FullEvaluator object to add calibration metrics.
     """
 
     CALIBRATION_K_VALUES = [10, 20, 50, 100]
 
-    def __init__(self, item_tag_matrix: torch.Tensor, train_user_tag_mtx: torch.Tensor, beta_smoothening: float = .01,
-                 aggr_by_group: bool = True,
-                 n_groups: int = 0,
-                 user_to_user_group: dict = None):
+    def __init__(self, full_evaluator: FullEvaluator, item_tag_mtx: torch.Tensor, user_tag_mtx: torch.Tensor,
+                 metric_name_prefix: str = 'tag',
+                 beta_smoothening: float = .01):
+
         """
-        @param item_tag_matrix: Tensor of shape [n_items,n_tags]. The i-th row is the normalized distribution of the
+        @param full_evaluator: FullEvaluator object to decorate
+        @param item_tag_mtx: Tensor of shape [n_items,n_tags]. The i-th row is the normalized distribution of the
         i-th item over the n_tags.
-        @param train_user_tag_mtx: Tensor of shape [n_users,n_tags]. The i-th row is the frequency distribution of the
+        @param user_tag_mtx: Tensor of shape [n_users,n_tags]. The i-th row is the frequency distribution of the
         i-th user over the n_tags.
         @param beta_smoothening: Smoothening value applied to the recommendation. See Eq. 5 in H. Steck Calibrated Recommendations
+        
         """
         assert 0 <= beta_smoothening <= 1, 'Beta value out of bounds'
-        super().__init__(aggr_by_group, n_groups, user_to_user_group)
 
-        self.train_user_tag_mtx = train_user_tag_mtx
-        self.item_tag_matrix = item_tag_matrix
+        self.full_evaluator = full_evaluator
+        self.item_tag_mtx = item_tag_mtx
+        self.user_tag_mtx = user_tag_mtx
+        self.metric_name_prefix = metric_name_prefix
         self.beta_smoothening = beta_smoothening
 
+    def _reset_internal_dict(self):
+        self.full_evaluator._reset_internal_dict()
+
+    def _add_entry_to_dict(self, group_idx, metric_name, metric_result):
+        self.full_evaluator._add_entry_to_dict(group_idx, metric_name, metric_result)
+
+    def get_n_groups(self):
+        return self.full_evaluator.get_n_groups()
+
+    def get_user_to_user_group(self):
+        return self.full_evaluator.get_user_to_user_group()
+
     def eval_batch(self, u_idxs: torch.Tensor, logits: torch.Tensor, y_true: torch.Tensor):
-        super().eval_batch(u_idxs, logits, y_true)
+        self.full_evaluator.eval_batch(u_idxs, logits, y_true)
 
-        self.train_user_tag_mtx = self.train_user_tag_mtx.to(logits.device)
-        self.item_tag_matrix = self.item_tag_matrix.to(logits.device)
+        self.user_tag_mtx = self.user_tag_mtx.to(logits.device)
+        self.item_tag_mtx = self.item_tag_mtx.to(logits.device)
 
-        k_sorted_values = sorted(FullEvaluatorCalibration.CALIBRATION_K_VALUES, reverse=True)
+        k_sorted_values = sorted(FullEvaluatorCalibrationDecorator.CALIBRATION_K_VALUES, reverse=True)
         k_max = k_sorted_values[0]
         idx_topk = logits.topk(k=k_max).indices
 
-        batch_user_train_tags_frequency = self.train_user_tag_mtx[u_idxs]
+        batch_user_train_tags_frequency = self.user_tag_mtx[u_idxs]
 
         for k in k_sorted_values:
             idx_topk = idx_topk[:, :k]
 
             # Compute recommendation distribution
-            batch_user_top_items_tags = self.item_tag_matrix[idx_topk]  # [batch_size, top_k, n_tags]
+            batch_user_top_items_tags = self.item_tag_mtx[idx_topk]  # [batch_size, top_k, n_tags]
             batch_user_tags_frequency = batch_user_top_items_tags.sum(1)  # [batch_size, n_tags]
             batch_user_tags_frequency /= k
 
@@ -469,19 +562,22 @@ class FullEvaluatorCalibration(FullEvaluator):
                         ['hellinger_distance@{}', 'jensen_shannon_distance@{}', 'kl_divergence@{}'],
                         [hellinger_distance, jensen_shannon_distance, kl_divergence]
                     ):
+
+                metric_name = self.metric_name_prefix + '_' + metric_name.format(k)
                 # Shape is [batch_size].
                 # N.B. kl divergence requires the target distribution as first argument!
                 metric_result = metric(batch_user_train_tags_frequency, batch_user_tags_frequency).detach()
 
                 # Collect results for 'all' users group
-                self.group_metrics[-1][metric_name.format(k)] += \
-                    metric_result.sum().item() if self.aggr_by_group else metric_result
+                self._add_entry_to_dict(-1, metric_name, metric_result)
 
                 # Collect results for specific user groups
-                if self.n_groups > 0:
-                    batch_user_to_user_groups = self.user_to_user_group[u_idxs]
-                    for group_idx in range(self.n_groups):
+                if self.get_n_groups() > 0:
+                    batch_user_to_user_groups = self.get_user_to_user_group()[u_idxs]
+                    for group_idx in range(self.get_n_groups()):
                         group_metric_idx = np.where(batch_user_to_user_groups == group_idx)
                         group_metric = metric_result[group_metric_idx]
-                        self.group_metrics[group_idx][metric_name.format(k)] += \
-                            group_metric.sum().item() if self.aggr_by_group else group_metric
+                        self._add_entry_to_dict(group_idx, metric_name, group_metric)
+
+    def get_results(self):
+        return self.full_evaluator.get_results()
