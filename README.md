@@ -1,4 +1,4 @@
-# :tangerine: Hassaku - Recommender System Framework
+# :tangerine: Hassaku - A Recommender Systems Framework for Research
 
 <div align="center">
     <img src="./assets/hassaku.png" style="width: 320px" />
