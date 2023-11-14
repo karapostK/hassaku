@@ -4,7 +4,7 @@ import wandb
 from algorithms.algorithms_utils import AlgorithmsEnum
 from algorithms.base_classes import SGDBasedRecommenderAlgorithm, SparseMatrixBasedRecommenderAlgorithm
 from algorithms.naive_algs import PopularItems
-from algorithms.sgd_alg import ECF
+from algorithms.sgd_alg import DeepMatrixFactorization, ECF
 from conf.conf_parser import parse_conf_file, parse_conf, save_yaml
 from data.data_utils import DatasetsEnum, get_dataloader
 from data.dataset import TrainRecDataset, ECFTrainRecDataset
@@ -35,10 +35,10 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union
         val_loader = get_dataloader(conf, 'val')
 
         alg = alg.value.build_from_conf(conf, train_loader.dataset)
-
-        # Validation happens within the Trainer
         rec_loss = RecommenderSystemLoss.build_from_conf(conf, train_loader.dataset)
         trainer = Trainer(alg, train_loader, val_loader, rec_loss, conf)
+
+        # Validation happens within the Trainer
         metrics_values = trainer.fit()
         save_yaml(conf['model_path'], conf)
 
@@ -97,8 +97,9 @@ def run_test(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union[str,
 
     test_loader = get_dataloader(conf, 'test')
 
-    if alg.value == PopularItems:
+    if alg.value == PopularItems or alg.value == DeepMatrixFactorization:
         # Popular Items requires the popularity distribution over the items learned over the training data
+        # DeepMatrixFactorization also requires access to the training data
         alg = alg.value.build_from_conf(conf, TrainRecDataset(conf['dataset_path']))
     elif alg.value == ECF:
         alg = alg.value.build_from_conf(conf, ECFTrainRecDataset(conf['dataset_path']))

@@ -6,7 +6,7 @@ from algorithms.linear_algs import EASE, SLIM
 from algorithms.mf_algs import SVDAlgorithm, AlternatingLeastSquare, RBMF
 from algorithms.naive_algs import PopularItems, RandomItems
 from algorithms.sgd_alg import SGDMatrixFactorization, UProtoMF, UIProtoMF, IProtoMF, SGDBaseline, ACF, UProtoMFs, \
-    IProtoMFs, UIProtoMFs, ECF
+    IProtoMFs, UIProtoMFs, ECF, DeepMatrixFactorization
 
 
 class AlgorithmsEnum(Enum):
@@ -30,5 +30,5 @@ class AlgorithmsEnum(Enum):
     iprotomfs = IProtoMFs
     uiprotomfs = UIProtoMFs
     ecf = ECF
-
+    dmf = DeepMatrixFactorization
 

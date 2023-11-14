@@ -43,6 +43,41 @@ rbmf_param = {
     'eval_batch_size': 256
 }
 
+# Deep Matrix Factorization (DeepMF)
+dmf_param = {
+    'lr': tune.loguniform(1e-4, 1e-2),
+    'wd': tune.loguniform(1e-6, 1e-1),
+    'final_dimension': tune.lograndint(16, 64, base=2),
+    'neg_train': tune.randint(1, 100),
+    'train_neg_strategy': 'uniform',
+    'rec_loss': 'bce',
+    'use_user_bias': False,
+    'use_item_bias': True,
+    'use_global_bias': False,
+    'optimizer': 'adamw',
+    'u_mid_layers': tune.lograndint(32, 128, base=2),
+    'i_mid_layers': tune.lograndint(32, 128, base=2),
+    **all_dataset_common_param,
+}
+
+dmf_ml1m_param = {
+    **dmf_param,
+    'train_batch_size': tune.lograndint(32, 128, base=2),
+    'neg_train': tune.randint(1, 100),
+}
+
+dmf_ml100k_param = {
+    **dmf_param,
+    'train_batch_size': tune.lograndint(32, 128, base=2),
+    'neg_train': tune.randint(1, 100),
+}
+
+dmf_lfm2b2020_param = {
+    **dmf_param,
+    'train_batch_size': tune.lograndint(32, 256, base=2),
+    'neg_train': tune.randint(1, 100),
+}
+
 # Alternating Least Squares (ALS)
 
 als_param = {
@@ -231,4 +266,6 @@ alg_data_param = {
     (AlgorithmsEnum.uiprotomf, DatasetsEnum.ml1m): uiprotomf_ml1m_param,
     (AlgorithmsEnum.uiprotomf, DatasetsEnum.lfm2b2020): uiprotomf_lfm2b2020_param,
     (AlgorithmsEnum.uiprotomf, DatasetsEnum.amazonvid2018): uiprotomf_amazonvid2018_param,
+    # Deep Matrix Factorization
+    (AlgorithmsEnum.dmf, DatasetsEnum.ml1m): dmf_ml1m_param,
 }

@@ -4,7 +4,7 @@ import os
 import wandb
 from algorithms.algorithms_utils import AlgorithmsEnum
 from algorithms.naive_algs import PopularItems
-from algorithms.sgd_alg import ECF
+from algorithms.sgd_alg import ECF, DeepMatrixFactorization
 from data.data_utils import get_dataloader, DatasetsEnum
 from data.dataset import TrainRecDataset, ECFTrainRecDataset
 from eval.eval import evaluate_recommender_algorithm, FullEvaluator
@@ -39,8 +39,9 @@ wandb.init(project='protofair', entity='karapost', config=conf, tags=[alg.name, 
 conf['running_settings']['eval_n_workers'] = 0
 test_loader = get_dataloader(conf, 'test')
 
-if alg.value == PopularItems:
+if alg.value == PopularItems or alg.value == DeepMatrixFactorization:
     # Popular Items requires the popularity distribution over the items learned over the training data
+    # DeepMatrixFactorization also requires access to the training data
     alg = alg.value.build_from_conf(conf, TrainRecDataset(conf['dataset_path']))
 elif alg.value == ECF:
     alg = alg.value.build_from_conf(conf, ECFTrainRecDataset(conf['dataset_path']))
