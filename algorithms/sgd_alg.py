@@ -2,7 +2,7 @@ import inspect
 import logging
 import math
 import os
-from typing import Union, Tuple, Dict
+from typing import Union, Tuple, Dict, List
 
 import torch
 from scipy import sparse as sp
@@ -1120,3 +1120,108 @@ class ECF(PrototypeWrapper):
         state_dict = torch.load(path)
         self.load_state_dict(state_dict, strict=False)
         print('Model Loaded')
+
+
+class DeepMatrixFactorization(SGDBasedRecommenderAlgorithm):
+    """
+    Deep Matrix Factorization Models for Recommender Systems by Xue et al. (https://www.ijcai.org/Proceedings/2017/0447.pdf)
+    """
+
+    def __init__(self, matrix: sp.spmatrix, u_mid_layers: Union[List[int], int],
+                 i_mid_layers: Union[List[int], int],
+                 final_dimension: int):
+        """
+        :param matrix: user x item sparse matrix
+        :param u_mid_layers: list of integers representing the size of the middle layers on the user side
+        :param i_mid_layers: list of integers representing the size of the middle layers on the item side
+        :param final_dimension: last dimension of the layers for both user and item side
+        """
+        super().__init__()
+        self.n_users, self.n_items = matrix.shape
+        # from equation (13) of the original paper
+        self.mu = 1.e-6
+
+        self.final_dimension = final_dimension
+
+        if isinstance(u_mid_layers, int):
+            u_mid_layers = [u_mid_layers]
+        if isinstance(i_mid_layers, int):
+            i_mid_layers = [i_mid_layers]
+
+        self.u_layers = [self.n_items] + u_mid_layers + [self.final_dimension]
+        self.i_layers = [self.n_users] + i_mid_layers + [self.final_dimension]
+
+        # Building the network for the user
+        u_nn = []
+        for i, (n_in, n_out) in enumerate(zip(self.u_layers[:-1], self.u_layers[1:])):
+            u_nn.append(nn.Linear(n_in, n_out))
+
+            if i != len(self.u_layers) - 2:
+                u_nn.append(nn.ReLU())
+        self.user_nn = nn.Sequential(*u_nn)
+
+        # Building the network for the item
+        i_nn = []
+        for i, (n_in, n_out) in enumerate(zip(self.i_layers[:-1], self.i_layers[1:])):
+            i_nn.append(nn.Linear(n_in, n_out))
+
+            if i != len(self.i_layers) - 2:
+                i_nn.append(nn.ReLU())
+        self.item_nn = nn.Sequential(*i_nn)
+
+        for user_param in self.user_nn.parameters():
+            user_param.requires_grad = True
+
+        for item_param in self.item_nn.parameters():
+            item_param.requires_grad = True
+
+        self.cosine_func = nn.CosineSimilarity(dim=-1)
+
+        # Unfortunately, it seems that there is no CUDA support for sparse matrices..
+        self.user_vectors = nn.Embedding.from_pretrained(torch.Tensor(matrix.todense()))
+        self.item_vectors = nn.Embedding.from_pretrained(self.user_vectors.weight.T)
+
+        # Initialization of the network
+        self.user_nn.apply(general_weight_init)
+        self.item_nn.apply(general_weight_init)
+
+        self.name = 'DeepMatrixFactorization'
+
+        print(f'Built {self.name} module \n'
+              f'- u_layers: {self.u_layers} \n'
+              f'- i_layers: {self.i_layers} \n')
+
+    def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor):
+
+        # User pass
+        u_vec = self.get_user_representations(u_idxs)
+        # Item pass
+        i_vec = self.get_item_representations(i_idxs)
+        # Cosine
+        sim = self.combine_user_item_representations(u_vec, i_vec)
+
+        return sim
+
+    @staticmethod
+    def build_from_conf(conf: dict, train_dataset: data.Dataset):
+        train_dataset = train_dataset.iteration_matrix
+        return DeepMatrixFactorization(train_dataset, conf['u_mid_layers'], conf['i_mid_layers'],
+                                       conf['final_dimension'])
+
+    def get_item_representations(self, i_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        i_vec = self.item_vectors(i_idxs)
+        i_vec = self.item_nn(i_vec)
+        return i_vec
+
+    def get_user_representations(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor]]:
+        u_vec = self.user_vectors(u_idxs)
+        u_vec = self.user_nn(u_vec)
+
+        return u_vec
+
+    def combine_user_item_representations(self, u_repr: Union[torch.Tensor, Tuple[torch.Tensor, ...]],
+                                          i_repr: Union[torch.Tensor, Tuple[torch.Tensor, ...]]) -> torch.Tensor:
+        sim = self.cosine_func(u_repr[:, None, :], i_repr)
+        sim[sim < self.mu] = self.mu
+
+        return sim
