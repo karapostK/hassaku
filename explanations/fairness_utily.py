@@ -393,7 +393,7 @@ def build_user_and_item_tag_matrix(path_to_dataset_folder: str = './data/ml1m', 
     n_users = train_data.user_idx.nunique()
 
     # Building Tag Matrix
-    tag_matrix = torch.zeros(size=(n_items, n_tags), dtype=torch.float16)
+    tag_matrix = torch.zeros(size=(n_items, n_tags), dtype=torch.float)
     tag_matrix[[item_tag_idxs_csv.item_idx, item_tag_idxs_csv.tag_idx]] = 1.
 
     # Normalizing row-wise
@@ -402,7 +402,8 @@ def build_user_and_item_tag_matrix(path_to_dataset_folder: str = './data/ml1m', 
     # Building Train Matrix
     train_mtx = scipy.sparse.csr_matrix(
         (torch.ones(len(train_data), dtype=torch.int16), (train_data.user_idx, train_data.item_idx)),
-        shape=(n_users, n_items))
+        shape=(n_users, n_items)
+    )
 
     # Computing User-Tag Frequencies
     users_tag_frequencies = train_mtx @ tag_matrix
@@ -441,44 +442,33 @@ def build_user_and_item_pop_matrix(path_to_dataset_folder: str = './data/ml1m', 
     # --- Compute Item Popularity Matrix --- #
     items_pop = train_mtx.sum(0).A1  # [n_items]
     pop_mass = items_pop.sum()  # total number of interactions
-    items_pop /= pop_mass
+    items_pop /= pop_mass  # Normalizing respect to the mass
 
     sorted_items_idxs = np.argsort(-items_pop)
-    items_pop = items_pop[sorted_items_idxs]
 
     mtx_row_idx = []
     mtx_col_idx = []
 
-    curr_pop_top_mass = 0
+    curr_pop_mass = 0
 
-    for ite_idx, item_idx, item_pop in zip(range(len(items_pop)), sorted_items_idxs, items_pop):
+    end_top_threshold = 0.2
+    end_middle_threshold = 0.8
 
-        if curr_pop_top_mass >= .2:
-            last_pop_idx = ite_idx
-            break
+    for item_idx in sorted_items_idxs:
 
-        curr_pop_top_mass += item_pop
+        curr_pop_mass += items_pop[item_idx]
         mtx_row_idx.append(item_idx)
-        mtx_col_idx.append(0)
 
-    curr_pop_bottom_mass = 0
-    for ite_idx, item_idx, item_pop in zip(reversed(range(len(items_pop))), reversed(sorted_items_idxs),
-                                           reversed(items_pop)):
-        if curr_pop_bottom_mass >= .2:
-            first_niche_idx = ite_idx
-            break
-
-        curr_pop_bottom_mass += item_pop
-        mtx_row_idx.append(item_idx)
-        mtx_col_idx.append(2)
-
-    # All the others
-    mtx_row_idx += list(sorted_items_idxs[last_pop_idx:first_niche_idx + 1])
-    mtx_col_idx += [1] * (first_niche_idx - last_pop_idx + 1)
+        if curr_pop_mass < end_top_threshold:
+            mtx_col_idx.append(0)
+        elif curr_pop_mass < end_middle_threshold:
+            mtx_col_idx.append(1)
+        else:
+            mtx_col_idx.append(2)
 
     # Creating the Matrix
     items_pop_mtx = scipy.sparse.csr_matrix(
-        (torch.ones(len(mtx_row_idx), dtype=torch.float), (mtx_row_idx, mtx_col_idx)),
+        (torch.ones(len(mtx_row_idx), dtype=torch.bool), (mtx_row_idx, mtx_col_idx)),
         shape=(n_items, 3))
 
     # --- Computing User Popularity --- #
