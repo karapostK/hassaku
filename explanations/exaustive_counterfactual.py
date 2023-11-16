@@ -76,7 +76,7 @@ elif conf['alg'] == "iprotomf":
 elif conf['alg'] == 'acf':
     n_item_prototypes = n_user_prototypes = alg.n_anchors
 elif conf['alg'] == 'ecf':
-    n_item_prototypes = n_user_prototypes = alg.n_clusters
+    n_user_prototypes = alg.n_clusters
 elif conf['alg'] == 'uiprotomf':
     n_user_prototypes = alg.uprotomf.n_prototypes
     n_item_prototypes = alg.iprotomf.n_prototypes
@@ -88,10 +88,8 @@ else:
 # Key is (entity_name,group,prototype_index,alpha)
 # Values are the results from the FullEvaluatorCalibrationDecorator.
 
-val_exhaustive_search_results = dict()
 val_exhaustive_search_results_raw = dict()
 
-test_exhaustive_search_results = dict()
 test_exhaustive_search_results_raw = dict()
 
 with torch.no_grad():

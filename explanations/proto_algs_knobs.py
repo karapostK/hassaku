@@ -40,12 +40,16 @@ class PrototypePerturb(ABC, nn.Module):
 class PrototypeMultiply(PrototypePerturb):
     """
     This class is used to multiply the prototypes with a lambda parameter.
+    NB. n_groups == 1 is the baseline (all users belong to a single group)
     """
 
     def __init__(self, n_prototypes: int, n_groups: int = 1, optimize_parameters: bool = True,
                  default_parameters: torch.Tensor = None, use_sigmoid: bool = False):
 
         super().__init__(n_prototypes, n_groups, optimize_parameters)
+
+        assert n_groups > 0, "n_groups should be greater than 0!"
+
         self.use_sigmoid = use_sigmoid
 
         if default_parameters is None:
@@ -67,10 +71,11 @@ class PrototypeMultiply(PrototypePerturb):
         @param in_repr: Shape is [batch_size, n_prototypes] or [batch_size,1,n_prototypes]
         @param group_idx: Shape is [batch_size]
         """
-        if group_idx is None and self.n_groups > 1:
-            raise ValueError('Group indexes are null but there exist multiple groups. Which one to use?')
-        elif group_idx is None and self.n_groups == 1:
-            group_idx = torch.zeros(self.n_prototypes, device=in_repr.device, dtype=torch.int64)
+        if group_idx is None:
+            if self.n_groups > 1:
+                raise ValueError('Group indexes are null but there exist multiple groups. Which one to use?')
+            else:
+                group_idx = torch.zeros(self.n_prototypes, device=in_repr.device, dtype=torch.int64)
 
         # Retrieving the lambdas for the current group
         lambdas = self.lambdas[group_idx]  # [batch_size, n_prototypes]

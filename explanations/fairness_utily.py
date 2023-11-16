@@ -468,7 +468,7 @@ def build_user_and_item_pop_matrix(path_to_dataset_folder: str = './data/ml1m', 
 
     # Creating the Matrix
     items_pop_mtx = scipy.sparse.csr_matrix(
-        (torch.ones(len(mtx_row_idx), dtype=torch.bool), (mtx_row_idx, mtx_col_idx)),
+        (torch.ones(len(mtx_row_idx), dtype=torch.float), (mtx_row_idx, mtx_col_idx)),
         shape=(n_items, 3))
 
     # --- Computing User Popularity --- #
