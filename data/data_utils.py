@@ -17,6 +17,7 @@ from data.dataset import TrainRecDataset, FullEvalDataset, ECFTrainRecDataset
 
 LOG_FILT_DATA_PATH = "log_filtering_data.txt"
 
+MOVIELENS_100K_DATASET_LINK = "https://files.grouplens.org/datasets/movielens/ml-100k.zip"
 MOVIELENS_1M_DATASET_LINK = "https://files.grouplens.org/datasets/movielens/ml-1m.zip"
 MOVIELENS_10M_DATASET_LINK = "https://files.grouplens.org/datasets/movielens/ml-10m.zip"
 
@@ -63,15 +64,17 @@ def download_movielens_dataset(save_path: str = './', which: str = '1m'):
     @type save_path: path to the folder where to save the raw dataset. Default to "./"
     @param which: Which movielens dataset should be donwloaded.
     """
-    assert which in ['1m', '10m'], f'The current implementation manages only 1m and 10m! {which} is not valid value.'
+    assert which in ['100k', '1m', '10m'], f'The current implementation manages only 1m and 10m! {which} is not valid value.'
 
     # Downloading
-    if which == '1m':
+    if which == '100k':
+        url = MOVIELENS_100K_DATASET_LINK
+    elif which == '1m':
         url = MOVIELENS_1M_DATASET_LINK
     elif which == '10m':
         url = MOVIELENS_10M_DATASET_LINK
     else:
-        raise ValueError(f'The current implementation manages only 1m and 10m! {which} is not valid value.')
+        raise ValueError(f'The current implementation manages only 100k, 1m and 10m! {which} is not valid value.')
 
     print("Downloading the dataset...")
     req = requests.get(url)
@@ -86,7 +89,9 @@ def download_movielens_dataset(save_path: str = './', which: str = '1m'):
 
     os.remove(dataset_zip_name)
 
-    if which == '1m':
+    if which == '100k':
+        os.rename('ml-100k', 'raw_dataset')
+    elif which == '1m':
         os.rename('ml-1m', 'raw_dataset')
     elif which == '10m':
         os.rename('ml-10M100K', 'raw_dataset')
