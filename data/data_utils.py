@@ -7,8 +7,11 @@ import shutil
 import zipfile
 
 import gdown
+import numpy as np
 import pandas as pd
 import requests
+import scipy
+import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -65,7 +68,8 @@ def download_movielens_dataset(save_path: str = './', which: str = '1m'):
     @type save_path: path to the folder where to save the raw dataset. Default to "./"
     @param which: Which movielens dataset should be donwloaded.
     """
-    assert which in ['100k', '1m', '10m'], f'The current implementation manages only 1m and 10m! {which} is not valid value.'
+    assert which in ['100k', '1m',
+                     '10m'], f'The current implementation manages only 1m and 10m! {which} is not valid value.'
 
     # Downloading
     if which == '100k':
@@ -365,3 +369,126 @@ def get_dataloader(conf: dict, split_set: str) -> DataLoader:
     else:
         raise ValueError(f"split_set value '{split_set}' is invalid! Please choose from [train, val, test]")
     return dataloader
+
+
+def build_user_and_item_tag_matrix(path_to_dataset_folder: str, alpha_smoothening: float = .01):
+    """
+    Builds the user x tag matrix and the item x tag matrix on the training data. For the user x tag matrix, each row
+    represents the tag frequencies in that user train data. N.B. As multiple genres/tags can appear in an item, we
+    perform row-wise normalization across the item-tag matrix **before** constructing the user-tag matrix. E.g. when a
+    user watches a Western movie then their propensity (~in frequency) towards Western movies is increased by 1. When a
+    user watches a Western|Sci-Fi movie then their propensity is split by both genres, effectively increasing 0.5 for
+    Western and 0.5 for Sci-Fi. This procedure is equivalent to Harald Steck "Calibrated Recommendations" RecSys 2018.
+    @param path_to_dataset_folder: Path to the dataset folder. Code will automatically fill out the rest,
+    @param alpha_smoothening: alpha value used to smoothen the training distribution (eq. 7 in H. Steck Calibrated Recommendations)
+    @return:
+        - user_tag_matrix
+        - item_tag_matrix
+    """
+
+    assert 0 <= alpha_smoothening <= 1, 'Alpha value out of bounds'
+
+    # Load Tag Matrix & Training Data
+    item_csv = pd.read_csv(os.path.join(path_to_dataset_folder, 'processed_dataset/item_idxs.csv'))
+    user_csv = pd.read_csv(os.path.join(path_to_dataset_folder, 'processed_dataset/user_idxs.csv'))
+    tag_csv = pd.read_csv(os.path.join(path_to_dataset_folder, 'processed_dataset/tag_idxs.csv'))
+    item_tag_idxs_csv = pd.read_csv(os.path.join(path_to_dataset_folder, 'processed_dataset/item_tag_idxs.csv'))
+    train_data = pd.read_csv(os.path.join(path_to_dataset_folder, 'processed_dataset/listening_history_train.csv'))[
+        ['user_idx', 'item_idx']]
+
+    n_tags = len(tag_csv)
+    n_items = len(item_csv)
+    n_users = len(user_csv)
+
+    # Building Tag Matrix
+    tag_matrix = torch.zeros(size=(n_items, n_tags), dtype=torch.float)
+    tag_matrix[[item_tag_idxs_csv.item_idx, item_tag_idxs_csv.tag_idx]] = 1.
+
+    # Normalizing row-wise
+    tag_matrix /= tag_matrix.sum(-1)[:, None]
+    tag_matrix[torch.isnan(tag_matrix)] = 0.  # Dealing with items with no tags
+
+    # Building Train Matrix
+    train_mtx = scipy.sparse.csr_matrix(
+        (torch.ones(len(train_data), dtype=torch.int16), (train_data.user_idx, train_data.item_idx)),
+        shape=(n_users, n_items)
+    )
+
+    # Computing User-Tag Frequencies
+    users_tag_frequencies = train_mtx @ tag_matrix
+    n_items_per_user = train_mtx.sum(-1).A
+    users_tag_frequencies /= n_items_per_user
+
+    # Smoothening (eq.7)
+    users_tag_frequencies = alpha_smoothening / n_tags + (1 - alpha_smoothening) * users_tag_frequencies
+
+    return torch.tensor(users_tag_frequencies), tag_matrix
+
+
+def build_user_and_item_pop_matrix(path_to_dataset_folder: str, alpha_smoothening: float = .01):
+    """
+    Builds the user x pop matrix and the item x pop matrix on the training data.
+    Bucketing follows: https://ceur-ws.org/Vol-3268/paper5.pdf and https://arxiv.org/pdf/2103.06364.pdf
+    @param path_to_dataset_folder: Path to the dataset folder. Code will automatically fill out the rest,
+    @param alpha_smoothening: alpha value used to smoothen the training distribution (eq. 7 in H. Steck Calibrated Recommendations)
+    @return:
+        - user_pop_matrix
+        - item_pop_matrix
+    """
+
+    assert 0 <= alpha_smoothening <= 1, 'Alpha value out of bounds'
+
+    # Load Training Data
+    item_csv = pd.read_csv(os.path.join(path_to_dataset_folder, 'processed_dataset/item_idxs.csv'))
+    user_csv = pd.read_csv(os.path.join(path_to_dataset_folder, 'processed_dataset/user_idxs.csv'))
+    train_data = pd.read_csv(os.path.join(path_to_dataset_folder, 'processed_dataset/listening_history_train.csv'))[
+        ['user_idx', 'item_idx']]
+
+    n_items = len(item_csv)
+    n_users = len(user_csv)
+    train_mtx = scipy.sparse.csr_matrix(
+        (torch.ones(len(train_data), dtype=torch.float), (train_data.user_idx, train_data.item_idx)),
+        shape=(n_users, n_items))
+
+    # --- Compute Item Popularity Matrix --- #
+    items_pop = train_mtx.sum(0).A1  # [n_items]
+    pop_mass = items_pop.sum()  # total number of interactions
+    items_pop /= pop_mass  # Normalizing respect to the mass
+
+    sorted_items_idxs = np.argsort(-items_pop)
+
+    mtx_row_idx = []
+    mtx_col_idx = []
+
+    curr_pop_mass = 0
+
+    end_top_threshold = 0.2
+    end_middle_threshold = 0.8
+
+    for item_idx in sorted_items_idxs:
+
+        curr_pop_mass += items_pop[item_idx]
+        mtx_row_idx.append(item_idx)
+
+        if curr_pop_mass < end_top_threshold:
+            mtx_col_idx.append(0)
+        elif curr_pop_mass < end_middle_threshold:
+            mtx_col_idx.append(1)
+        else:
+            mtx_col_idx.append(2)
+
+    # Creating the Matrix
+    items_pop_mtx = scipy.sparse.csr_matrix(
+        (torch.ones(len(mtx_row_idx), dtype=torch.float), (mtx_row_idx, mtx_col_idx)),
+        shape=(n_items, 3))
+
+    # --- Computing User Popularity --- #
+
+    user_pop_mtx = train_mtx @ items_pop_mtx
+    user_pop_mtx = user_pop_mtx.A
+    user_pop_mtx /= user_pop_mtx.sum(-1)[:, None]
+
+    # Smoothening (eq.7)
+    user_pop_mtx = alpha_smoothening / 3 + (1 - alpha_smoothening) * user_pop_mtx
+
+    return torch.tensor(user_pop_mtx), torch.tensor(items_pop_mtx.A)

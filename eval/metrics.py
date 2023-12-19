@@ -105,24 +105,48 @@ def ndcg_at_k_batch(logits: torch.Tensor, y_true: torch.Tensor, k: int = 10, agg
         return NDCG
 
 
-def weight_ndcg_at_k_batch(y_true: torch.Tensor, k: int = 10):
+def hellinger_distance(p: torch.Tensor, q: torch.Tensor):
     """
-    Computes the weight for NDCG@10, similar to eq.9 in https://ieeexplore.ieee.org/document/9514867
-    w(pos,K) =  1/(IDCG@K * log(pos+1))
-    :param y_true: the true prediction. Shape is (batch_size, *)
-    :param k: cut-off value
-
-    :return: wNDCG@k. Shape is (batch_size,)
+    Computes the Hellinger Distance between two probability distributions.
+    It is assumed that both p and q have the same domain. The distance is symmetric.
+    # https://en.wikipedia.org/wiki/Hellinger_distance
+    @param p: First Probability Distribution. Shape is [*, d] where d is the discrete # of events
+    @param q: Second Probability Distribution. Shape is the same as p.
+    @return: Hellinger Distance. Shape is [*]
     """
-    # Assuming that y_true is the same across the batch
-    # Assuming there is at least one 0 and one 1 in y_true
-    y_true_single = y_true[0]
+    diff = torch.sqrt(p) - torch.sqrt(q)
+    squared_diff = diff ** 2
+    return torch.sqrt(.5 * squared_diff.sum(-1))
 
-    n_pos = int(torch.where(y_true_single == 0)[0][0])
 
-    discount_template = 1. / torch.log2(torch.arange(2, k + 2).float())
-    discount_template = discount_template.to(y_true.device)
+def kl_divergence(true_p: torch.Tensor, model_q: torch.Tensor):
+    """
+    Computes the Kullback-Leibler Divergence between two probability distribution. The divergence is NOT asymmetric.
+    It is assumed that both p and q have the same domain.
+    # https://dl.acm.org/doi/pdf/10.1145/3240323.3240372
+    @param true_p: "represents the data, the observations, or a measured probability distribution" (from Wikipedia)
+    @param model_q: "represents instead a theory, a model, a description or an approximation of P" (from Wikipedia)
+    @return: The KL divergence of model_p from true_p.
+    """
+    return (true_p * (true_p.log() - model_q.log())).sum(-1)
 
-    weight = discount_template / discount_template[:n_pos].sum()
 
-    return weight
+def jensen_shannon_distance(p: torch.Tensor, q: torch.Tensor):
+    """
+    Computes the Jensen Shannon Distance between two probability distributions.
+    It is assumed that both p and q have the same domain. The distance is symmetric.
+    *NB.* The function will return nan if one of the two probability distribution is not defined on some event!
+    To avoid this result, it is advised to blend each of the probability distribution with a uniform distribution over
+    all the events. E.g. assuming that p is defined on 10 events: p = (1-α) * p + α * 1/d with α equal to a small value
+    such as α= .01
+    # https://en.wikipedia.org/wiki/Jensen%E2%80%93Shannon_divergence
+    @param p: First Probability Distribution. Shape is [*, d] where d is the discrete # of events
+    @param q: Second Probability Distribution. Shape is the same as p.
+    @return: Jensen Shannon Distance. Shape is [*]
+    """
+    m = (.5 * (p + q))
+    kl_p_m = kl_divergence(p, m)
+    kl_q_m = kl_divergence(q, m)
+
+    jsd = .5 * (kl_p_m + kl_q_m)
+    return torch.sqrt(jsd)

@@ -5,15 +5,16 @@ import wandb
 from algorithms.algorithms_utils import AlgorithmsEnum
 from algorithms.naive_algs import PopularItems
 from algorithms.sgd_alg import ECF, DeepMatrixFactorization
-from data.data_utils import get_dataloader, DatasetsEnum
+from data.data_utils import get_dataloader, DatasetsEnum, build_user_and_item_pop_matrix, build_user_and_item_tag_matrix
 from data.dataset import TrainRecDataset, ECFTrainRecDataset
-from eval.eval import evaluate_recommender_algorithm, FullEvaluator
-from explanations.fairness_utily import fetch_best_in_sweep, build_user_and_item_tag_matrix, \
-    build_user_and_item_pop_matrix, FullEvaluatorCalibrationDecorator
+from eval.eval import evaluate_recommender_algorithm, FullEvaluator, FullEvaluatorCalibrationDecorator
+from utilities.wandb_utils import fetch_best_in_sweep
 
 parser = argparse.ArgumentParser(description='Start a test experiment')
 
 parser.add_argument('--sweep_id', '-s', type=str, help='ID of the sweep')
+parser.add_argument('--wandb_entity_name', '-e', help='Name of the Entity on W&B', type=str)
+parser.add_argument('--wandb_project_name', '-p', help='Name of the Project on W&B', type=str)
 parser.add_argument('--measure_calibration', '-c', help='Whether to compute calibration metrics as well',
                     action='store_true', default=False)
 
@@ -21,9 +22,16 @@ args = parser.parse_args()
 
 sweep_id = args.sweep_id
 measure_calibration = args.measure_calibration
+wandb_entity_name = args.wandb_entity_name
+wandb_project_name = args.wandb_project_name
 
-best_run_config = fetch_best_in_sweep(sweep_id, good_faith=False, project_base_directory='.',
-                                      preamble_path='~/PycharmProjects', wandb_entitiy_name='karapost')
+best_run_config = fetch_best_in_sweep(sweep_id,
+                                      good_faith=False,
+                                      project_base_directory='.',
+                                      preamble_path='~/PycharmProjects',
+                                      wandb_entitiy_name=wandb_entity_name,
+                                      wandb_project_name=wandb_project_name
+                                      )
 
 # Model is now local
 # Carry out Test
@@ -33,7 +41,7 @@ conf = best_run_config
 print('Starting Test')
 print(f'Algorithm is {alg.name} - Dataset is {dataset.name}')
 
-wandb.init(project='protofair', entity='karapost', config=conf, tags=[alg.name, dataset.name],
+wandb.init(project=wandb_project_name, entity=wandb_entity_name, config=conf, tags=[alg.name, dataset.name],
            group=f'{alg.name} - {dataset.name} - test', name=conf['time_run'], job_type='test', reinit=True)
 
 conf['running_settings']['eval_n_workers'] = 0
