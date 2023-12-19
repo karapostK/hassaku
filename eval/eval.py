@@ -64,7 +64,7 @@ class FullEvaluator:
         # -- Counting per Group Entries --- #
         self.n_entries[-1] += logits.shape[0]
         if self.get_n_groups() > 0:
-            batch_user_to_user_groups = self.get_user_to_user_group()[u_idxs]
+            batch_user_to_user_groups = self.get_user_to_user_group().to(u_idxs.device)[u_idxs]
             for group_idx in range(self.n_groups):
                 group_metric_idx = torch.where(batch_user_to_user_groups == group_idx)[0]
                 self.n_entries[group_idx] += len(group_metric_idx)
@@ -92,9 +92,9 @@ class FullEvaluator:
 
                 # Collect results for specific user groups
                 if self.get_n_groups() > 0:
-                    batch_user_to_user_groups = self.get_user_to_user_group()[u_idxs]
+                    batch_user_to_user_groups = self.get_user_to_user_group().to(u_idxs.device)[u_idxs]
                     for group_idx in range(self.n_groups):
-                        group_metric_idx = np.where(batch_user_to_user_groups == group_idx)
+                        group_metric_idx = np.where(batch_user_to_user_groups.cpu() == group_idx)
                         self._add_entry_to_dict(group_idx, metric_name.format(k), metric_result[group_metric_idx])
 
     def get_results(self):

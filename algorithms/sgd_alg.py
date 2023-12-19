@@ -1187,7 +1187,7 @@ class DeepMatrixFactorization(SGDBasedRecommenderAlgorithm):
 
         self.name = 'DeepMatrixFactorization'
 
-        print(f'Built {self.name} module \n'
+        logging.info(f'Built {self.name} module \n'
               f'- u_layers: {self.u_layers} \n'
               f'- i_layers: {self.i_layers} \n')
 
