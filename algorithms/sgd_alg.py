@@ -10,7 +10,7 @@ from torch import nn
 from torch.nn import functional as F
 from torch.utils import data
 
-from algorithms.base_classes import SGDBasedRecommenderAlgorithm
+from algorithms.base_classes import SGDBasedRecommenderAlgorithm, PrototypeWrapper
 from explanations.utils import protomf_post_val_light
 from train.utils import general_weight_init
 
@@ -184,7 +184,7 @@ class SGDMatrixFactorization(SGDBasedRecommenderAlgorithm):
                                       conf['use_item_bias'], conf['use_global_bias'])
 
 
-class ACF(SGDBasedRecommenderAlgorithm):
+class ACF(PrototypeWrapper):
     """
     Implements Anchor-based Collaborative Filtering by Barkan et al.(https://dl.acm.org/doi/pdf/10.1145/3459637.3482056)
     """
@@ -266,6 +266,26 @@ class ACF(SGDBasedRecommenderAlgorithm):
         dots = (u_anc.unsqueeze(-2) * i_anc).sum(dim=-1)
         return dots
 
+    def get_item_representations_pre_tune(self, i_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        i_embed = self.item_embed(i_idxs)  # [batch_size, (n_neg + 1), embedding_dim]
+        c_i_unnorm = i_embed @ self.anchors.T  # [batch_size, (n_neg + 1), n_anchors]
+        c_i = nn.Softmax(dim=-1)(c_i_unnorm)  # [batch_size, (n_neg + 1), n_anchors]
+        return c_i
+
+    def get_item_representations_post_tune(self, c_i: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        i_anc = c_i @ self.anchors  # [batch_size, (n_neg + 1), embedding_dim]
+        return i_anc, c_i, None
+
+    def get_user_representations_pre_tune(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        u_embed = self.user_embed(u_idxs)  # [batch_size, embedding_dim]
+        c_u = u_embed @ self.anchors.T  # [batch_size, n_anchors]
+        c_u = nn.Softmax(dim=-1)(c_u)
+        return c_u
+
+    def get_user_representations_post_tune(self, c_u: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        u_anc = c_u @ self.anchors  # [batch_size, embedding_dim]
+        return u_anc
+
     def get_and_reset_other_loss(self) -> Dict:
         _acc_exc, _acc_inc = self._acc_exc, self._acc_inc
         self._acc_exc = self._acc_inc = 0
@@ -293,7 +313,7 @@ class ACF(SGDBasedRecommenderAlgorithm):
             curr_epoch)
 
 
-class UProtoMF(SGDBasedRecommenderAlgorithm):
+class UProtoMF(PrototypeWrapper):
     """
     Implements the ProtoMF model with user prototypes as defined in https://dl.acm.org/doi/abs/10.1145/3523227.3546756
     """
@@ -373,6 +393,13 @@ class UProtoMF(SGDBasedRecommenderAlgorithm):
             'batch_loss': batch_loss
         }
 
+    def get_user_representations_pre_tune(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        u_repr = self.get_user_representations(u_idxs)
+        return u_repr
+
+    def get_user_representations_post_tune(self, u_repr: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        return u_repr
+
     @staticmethod
     def build_from_conf(conf: dict, dataset: data.Dataset):
         return UProtoMF(dataset.n_users, dataset.n_items, conf['embedding_dim'], conf['n_prototypes'],
@@ -388,7 +415,7 @@ class UProtoMF(SGDBasedRecommenderAlgorithm):
             curr_epoch)
 
 
-class IProtoMF(SGDBasedRecommenderAlgorithm):
+class IProtoMF(PrototypeWrapper):
     """
     Implements the ProtoMF model with item prototypes as defined in https://dl.acm.org/doi/abs/10.1145/3523227.3546756
     """
@@ -447,6 +474,13 @@ class IProtoMF(SGDBasedRecommenderAlgorithm):
 
         return sim_mtx
 
+    def get_item_representations_pre_tune(self, i_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        i_repr = self.get_item_representations(i_idxs)
+        return i_repr
+
+    def get_item_representations_post_tune(self, i_repr: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        return i_repr
+
     def combine_user_item_representations(self, u_repr: Union[torch.Tensor, Tuple[torch.Tensor, ...]],
                                           i_repr: Union[torch.Tensor, Tuple[torch.Tensor, ...]]) -> torch.Tensor:
         dots = (u_repr.unsqueeze(-2) * i_repr).sum(dim=-1)
@@ -485,7 +519,7 @@ class IProtoMF(SGDBasedRecommenderAlgorithm):
             curr_epoch)
 
 
-class UIProtoMF(SGDBasedRecommenderAlgorithm):
+class UIProtoMF(PrototypeWrapper):
     """
     Implements the ProtoMF model with item and user prototypes as defined in https://dl.acm.org/doi/abs/10.1145/3523227.3546756
     """
@@ -542,6 +576,20 @@ class UIProtoMF(SGDBasedRecommenderAlgorithm):
         dots = u_dots + i_dots
         return dots
 
+    def get_item_representations_pre_tune(self, i_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        i_repr = self.get_item_representations(i_idxs)
+        return i_repr
+
+    def get_item_representations_post_tune(self, i_repr: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        return i_repr
+
+    def get_user_representations_pre_tune(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        u_repr = self.get_user_representations(u_idxs)
+        return u_repr
+
+    def get_user_representations_post_tune(self, u_repr: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        return u_repr
+
     def forward(self, u_idxs: torch.Tensor, i_idxs: torch.Tensor) -> torch.Tensor:
         u_repr = self.get_user_representations(u_idxs)
         i_repr = self.get_item_representations(i_idxs)
@@ -576,7 +624,7 @@ class UIProtoMF(SGDBasedRecommenderAlgorithm):
                          conf['i_sim_proto_weight'], conf['i_sim_batch_weight'])
 
 
-class ECF(SGDBasedRecommenderAlgorithm):
+class ECF(PrototypeWrapper):
     """
     Implements the ECF model from https://dl.acm.org/doi/10.1145/3543507.3583303
     """
@@ -731,6 +779,57 @@ class ECF(SGDBasedRecommenderAlgorithm):
 
         sparse_dots = (a_i.unsqueeze(-2) * x_i).sum(dim=-1)
         return sparse_dots
+
+    def get_item_representations_pre_tune(self, i_idxs) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        # i_idxs is ignored
+        i_embed = self.item_embed.weight  # [n_items, embed_d]
+        self._x_tildes = compute_cosine_sim(i_embed, self.clusters)  # [n_items, n_clusters]
+
+        # Creating exact mask
+        m = torch.zeros_like(self._x_tildes).to(self._x_tildes.device)
+        x_tilde_tops = self._x_tildes.topk(self.top_m).indices  # [n_items, top_m]
+        dummy_column = torch.arange(self.n_items)[:, None].to(self._x_tildes.device)
+        m[dummy_column, x_tilde_tops] = True
+
+        # Creating approximated mask
+        m_tilde = nn.Softmax(dim=-1)(self._x_tildes / self.temp_masking)  # [n_items, n_clusters]
+
+        # Putting together the masks
+        m_hat = m_tilde + (m - m_tilde).detach()
+
+        # Building affiliation vector
+        self._xs = nn.Sigmoid()(self._x_tildes) * m_hat
+        return self._xs, self.item_embed.weight
+
+    def get_item_representations_post_tune(self, i_repr: torch.Tensor) -> Union[
+        torch.Tensor, Tuple[torch.Tensor, ...]]:
+
+        return i_repr
+
+    def get_user_representations_pre_tune(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        y_u = self.interaction_matrix[u_idxs]  # [batch_size, n_items]
+        u_embed = self.user_embed(u_idxs)
+        a_tilde = y_u @ self._x_tildes  # [batch_size, n_clusters]
+
+        # Creating exact mask
+        m = torch.zeros_like(a_tilde).to(a_tilde.device)
+        a_tilde_tops = a_tilde.topk(self.top_n).indices
+        dummy_column = torch.arange(a_tilde.shape[0])[:, None].to(a_tilde.device)
+        m[dummy_column, a_tilde_tops] = True
+
+        # Creating approximated mask
+        m_tilde = nn.Softmax(dim=-1)(a_tilde / self.temp_masking)
+
+        # Putting together the masks
+        m_hat = m_tilde + (m - m_tilde).detach()
+
+        # Building affiliation vector
+        a_i = nn.Sigmoid()(a_tilde) * m_hat
+
+        return a_i, u_embed
+
+    def get_user_representations_post_tune(self, u_repr: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        return u_repr
 
     def get_and_reset_other_loss(self) -> Dict:
         acc_ts, acc_ind, acc_cf = self._acc_ts, self._acc_ind, self._acc_cf

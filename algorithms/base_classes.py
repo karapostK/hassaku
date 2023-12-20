@@ -163,3 +163,21 @@ class SGDBasedRecommenderAlgorithm(RecommenderAlgorithm, ABC, nn.Module):
         state_dict = torch.load(path)
         self.load_state_dict(state_dict)
         print('Model Loaded')
+
+
+class PrototypeWrapper(SGDBasedRecommenderAlgorithm):
+    """
+    Simple class to augment existing ones with methods related to Prototypes.
+    """
+
+    def get_item_representations_pre_tune(self, i_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        raise NotImplementedError('This method has not been implemented for this class!')
+
+    def get_item_representations_post_tune(self, i_repr: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        raise NotImplementedError('This method has not been implemented for this class!')
+
+    def get_user_representations_pre_tune(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        raise NotImplementedError('This method has not been implemented for this class!')
+
+    def get_user_representations_post_tune(self, u_repr: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        raise NotImplementedError('This method has not been implemented for this class!')
