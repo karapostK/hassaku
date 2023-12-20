@@ -23,7 +23,6 @@ DEF_LEARNING_RATE = 1e-3
 DEF_WEIGHT_DECAY = 0
 DEF_OPTIMIZER = 'adam'
 DEF_REC_LOSS = 'bce'
-DEF_LOSS_AGGREGATOR = 'mean'
 DEF_DEVICE = 'cpu'
 DEF_OPTIMIZING_METRIC = 'ndcg@10'
 DEF_BATCH_VERBOSE = False
@@ -161,13 +160,6 @@ def parse_conf(conf: dict, alg: AlgorithmsEnum, dataset: DatasetsEnum) -> dict:
         else:
             assert conf['rec_loss'] in [rec_loss.name for rec_loss in
                                         RecommenderSystemLossesEnum], f"Rec loss ({conf['rec_loss']}) not implemented"
-
-        if 'loss_aggregator' not in conf:
-            conf['loss_aggregator'] = DEF_LOSS_AGGREGATOR
-            added_parameters_list.append(f"loss_aggregator={conf['loss_aggregator']}")
-        else:
-            assert conf['loss_aggregator'] in ['mean',
-                                               'sum'], f"Loss aggregator ({conf['loss_aggregator']}) not implemented"
 
         if 'device' not in conf:
             conf['device'] = DEF_DEVICE

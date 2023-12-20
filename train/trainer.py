@@ -71,8 +71,7 @@ class Trainer:
         self.best_epoch = None
         logging.info(f'Built Trainer module \n'
                      f'- n_epochs: {self.n_epochs} \n'
-                     f'- rec_loss: {self.rec_loss.__class__.__name__} \n'
-                     f'- loss_aggregator: {self.rec_loss.aggregator} \n'
+                     f'- rec_loss: {self.rec_loss.name} \n'
                      f'- device: {self.device} \n'
                      f'- optimizing_metric: {self.optimizing_metric} \n'
                      f'- model_path: {self.model_path} \n'
