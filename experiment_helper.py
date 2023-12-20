@@ -9,7 +9,7 @@ from conf.conf_parser import parse_conf_file, parse_conf, save_yaml
 from data.data_utils import DatasetsEnum, get_dataloader
 from data.dataset import TrainRecDataset, ECFTrainRecDataset
 from eval.eval import evaluate_recommender_algorithm, FullEvaluator
-from train.rec_losses import RecommenderSystemLoss
+from train.rec_losses import RecommenderSystemLoss, RecommenderSystemLossesEnum
 from train.trainer import Trainer
 from utilities.utils import reproducible
 from wandb_conf import PROJECT_NAME, ENTITY_NAME
@@ -34,8 +34,11 @@ def run_train_val(alg: AlgorithmsEnum, dataset: DatasetsEnum, conf: typing.Union
         train_loader = get_dataloader(conf, 'train')
         val_loader = get_dataloader(conf, 'val')
 
+        rec_loss = RecommenderSystemLossesEnum[conf['rec_loss']]
+
         alg = alg.value.build_from_conf(conf, train_loader.dataset)
-        rec_loss = RecommenderSystemLoss.build_from_conf(conf, train_loader.dataset)
+        rec_loss = rec_loss.value.build_from_conf(conf, train_loader.dataset)
+
         trainer = Trainer(alg, train_loader, val_loader, rec_loss, conf)
 
         # Validation happens within the Trainer

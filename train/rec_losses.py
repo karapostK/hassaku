@@ -1,3 +1,4 @@
+import logging
 import math
 from abc import ABC, abstractmethod
 from enum import Enum
@@ -7,34 +8,33 @@ from torch import nn
 
 
 class RecommenderSystemLoss(ABC):
-    def __init__(self, n_items: int = None, aggregator: str = 'mean', train_neg_strategy: str = 'uniform',
-                 neg_train: int = 4):
-        assert aggregator in ['mean', 'sum'], "Type of Aggregator not yet defined"
-        assert train_neg_strategy in ['uniform'], "Type of Negative Strategy not currently supported"
-
+    def __init__(self):
         super().__init__()
-        self.n_items = n_items
-        self.aggregator = aggregator
-        self.train_neg_strategy = train_neg_strategy
-        self.neg_train = neg_train
+        self.name = 'RecommenderSystemLoss'
+
+        logging.info(f'Built {self.name} module')
 
     @abstractmethod
     def compute_loss(self, logits: torch.Tensor, labels: torch.Tensor):
         pass
 
     @staticmethod
+    @abstractmethod
     def build_from_conf(conf: dict, dataset):
-        rec_loss_class = RecommenderSystemLossesEnum[conf['rec_loss']]
-        return rec_loss_class.value(
-            n_items=dataset.n_items,
-            aggregator=conf['loss_aggregator'],
-            train_neg_strategy=conf['train_neg_strategy'],
-            neg_train=conf['neg_train']
-        )
+        pass
 
 
 class RecBinaryCrossEntropy(RecommenderSystemLoss):
-    # Todo: this loss should be adjusted according to the sampling probability
+
+    def __init__(self):
+        super().__init__()
+        self.name = 'RecBinaryCrossEntropy'
+
+        logging.info(f'Built {self.name} module')
+
+    @staticmethod
+    def build_from_conf(conf: dict, dataset):
+        return RecBinaryCrossEntropy()
 
     def compute_loss(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         """
@@ -43,18 +43,27 @@ class RecBinaryCrossEntropy(RecommenderSystemLoss):
         where x_ui and x_uj are the prediction for user u on item i and j, respectively. Item i positive instance while
         Item j is a negative instance.
 
-        :param logits: Logits values from the network. The first column always contain the values of positive instances.
-                Shape is (batch_size, 1 + n_neg).
-        :param labels: 1-0 Labels. The first column contains 1s while all the others 0s.
+        :param logits: Logits values from the network.
+        :param labels: 1-0 Labels.
 
         :return: The binary cross entropy as computed above
         """
-        loss = nn.BCEWithLogitsLoss(reduction=self.aggregator)(logits.flatten(), labels.flatten())
+        loss = nn.BCEWithLogitsLoss()(logits.flatten(), labels.flatten())
 
         return loss
 
 
 class RecBayesianPersonalizedRankingLoss(RecommenderSystemLoss):
+
+    def __init__(self):
+        super().__init__()
+        self.name = 'RecBayesianPersonalizedRankingLoss'
+
+        logging.info(f'Built {self.name} module')
+
+    @staticmethod
+    def build_from_conf(conf: dict, dataset):
+        return RecBayesianPersonalizedRankingLoss()
 
     def compute_loss(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         """
@@ -74,12 +83,36 @@ class RecBayesianPersonalizedRankingLoss(RecommenderSystemLoss):
 
         diff_logits = pos_logits - neg_logits
 
-        loss = nn.BCEWithLogitsLoss(reduction=self.aggregator)(diff_logits.flatten(), labels.flatten())
+        loss = nn.BCEWithLogitsLoss()(diff_logits.flatten(), labels.flatten())
 
         return loss
 
 
 class RecSampledSoftmaxLoss(RecommenderSystemLoss):
+    """
+    If the variables are passed to __init__ then the class adjust the loss computation by taking into account the sampling strategy, the # of total items, and the # of negative samples.
+    See https://arxiv.org/pdf/2101.08769.pdf for more details
+    """
+
+    def __init__(self,
+                 n_items: int = None,
+                 train_neg_strategy: str = None,
+                 neg_train: int = None):
+        super().__init__()
+
+        self.n_items = n_items
+        self.train_neg_strategy = train_neg_strategy
+        self.neg_train = neg_train
+
+        self.name = 'RecSampledSoftmaxLoss'
+
+        logging.info(f'Built {self.name} module')
+
+    @staticmethod
+    def build_from_conf(conf: dict, dataset):
+        return RecSampledSoftmaxLoss(n_items=dataset.n_items,
+                                     train_neg_strategy=conf['train_neg_strategy'],
+                                     neg_train=conf['neg_train'])
 
     def compute_loss(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         """
@@ -103,10 +136,7 @@ class RecSampledSoftmaxLoss(RecommenderSystemLoss):
 
         sampled_loss = pos_logits_sum + log_sum_exp_sum
 
-        if self.aggregator == 'sum':
-            return sampled_loss.sum()
-        elif self.aggregator == 'mean':
-            return sampled_loss.mean()
+        return sampled_loss.mean()
 
 
 class RecommenderSystemLossesEnum(Enum):
