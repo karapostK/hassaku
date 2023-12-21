@@ -85,6 +85,12 @@ class PrototypeMultiply(PrototypePerturb):
         # Multiplying the representations with the lambdas
         return in_repr * lambdas
 
+    def to(self, *args, **kwargs):
+        for arg in args:
+            if type(arg) == torch.device or arg == 'cuda' or arg == 'cpu':
+                self.lambdas = self.lambdas.to(arg)
+        return super().to(*args, **kwargs)
+
 
 class PrototypeAdd(PrototypePerturb):
     """
@@ -122,6 +128,12 @@ class PrototypeAdd(PrototypePerturb):
 
         # Adding the deltas to the representations
         return in_repr + deltas
+
+    def to(self, *args, **kwargs):
+        for arg in args:
+            if type(arg) == torch.device or arg == 'cuda' or arg == 'cpu':
+                self.deltas = self.deltas.to(arg)
+        return super().to(*args, **kwargs)
 
 
 class PrototypeTuner(SGDBasedRecommenderAlgorithm):
@@ -245,3 +257,9 @@ class PrototypeTuner(SGDBasedRecommenderAlgorithm):
     @staticmethod
     def build_from_conf(conf: dict, dataset: data.Dataset):
         raise NotImplementedError("This model cannot be loaded from conf!")
+
+    def to(self, *args, **kwargs):
+        for arg in args:
+            if type(arg) == torch.device or arg == 'cuda' or arg == 'cpu':
+                self.prototype_perturb = self.prototype_perturb.to(arg)
+        return super().to(*args, **kwargs)

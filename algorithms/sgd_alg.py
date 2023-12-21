@@ -270,11 +270,13 @@ class ACF(PrototypeWrapper):
         i_embed = self.item_embed(i_idxs)  # [batch_size, (n_neg + 1), embedding_dim]
         c_i_unnorm = i_embed @ self.anchors.T  # [batch_size, (n_neg + 1), n_anchors]
         c_i = nn.Softmax(dim=-1)(c_i_unnorm)  # [batch_size, (n_neg + 1), n_anchors]
-        return c_i
+        return c_i, c_i_unnorm
 
-    def get_item_representations_post_tune(self, c_i: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+    def get_item_representations_post_tune(self, i_repr: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        c_i = i_repr[0]
+        c_i_unorm = i_repr[1]
         i_anc = c_i @ self.anchors  # [batch_size, (n_neg + 1), embedding_dim]
-        return i_anc, c_i, None
+        return i_anc, c_i, c_i_unorm
 
     def get_user_representations_pre_tune(self, u_idxs: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
         u_embed = self.user_embed(u_idxs)  # [batch_size, embedding_dim]

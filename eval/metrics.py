@@ -150,3 +150,43 @@ def jensen_shannon_distance(p: torch.Tensor, q: torch.Tensor):
 
     jsd = .5 * (kl_p_m + kl_q_m)
     return torch.sqrt(jsd)
+
+
+def weight_ndcg_at_k_batch(y_true: torch.Tensor, k: int = 10):
+    """
+    Computes the weight for NDCG@10, similar to eq.9 in https://ieeexplore.ieee.org/document/9514867
+    w(pos,K) =  1/(IDCG@K * log(pos+1))
+    :param y_true: the true prediction. Shape is (batch_size, *)
+    :param k: cut-off value
+
+    :return: wNDCG@k. Shape is (k,)
+    """
+    # Assuming that y_true is the same across the batch
+    assert (y_true == y_true[0]).all(), 'y_true is not the same across the batch!'
+    # Assuming there is at least one 0 and one 1 in y_true
+    assert (y_true[0] == 0).any() and (y_true[0] == 1).any(), 'y_true does not contain at least one 0 and one 1!'
+
+    y_true_single = y_true[0]
+    n_pos = int(torch.where(y_true_single == 0)[0][0])
+
+    discount_template = 1. / torch.log2(torch.arange(2, k + 2).float())
+    discount_template = discount_template.to(y_true.device)
+
+    weight = discount_template / discount_template[:n_pos].sum()
+
+    return weight
+
+
+def weight_precision_at_k_batch(y_true: torch.Tensor, k: int = 10):
+    """
+    Computes the weight for Precision@10, similar to eq.9 in https://ieeexplore.ieee.org/document/9514867
+    w(pos,K) =  1/(K)
+    :param y_true: the true prediction. Shape is (batch_size, *)
+    :param k: cut-off value
+
+    :return: wPrecision@k. Shape is (k,)
+    """
+
+    weight = torch.tensor(1 / k, device=y_true.device).repeat(y_true.shape[0])
+
+    return weight
