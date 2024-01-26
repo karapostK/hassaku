@@ -6,7 +6,6 @@ import warnings
 
 import numpy as np
 from scipy import sparse as sp
-from sklearn.linear_model import ElasticNet
 from tqdm import trange
 
 from algorithms.base_classes import SparseMatrixBasedRecommenderAlgorithm
@@ -63,6 +62,8 @@ class SLIM(SparseMatrixBasedRecommenderAlgorithm):
 
     @staticmethod
     def work(params):
+        from sklearn.linear_model import ElasticNet
+
         from_j, to_j = params[0], params[1]
         A = params[2]
         alpha, l1_ratio, max_iter = params[3], params[4], params[5]

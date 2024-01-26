@@ -2,10 +2,8 @@ import logging
 import os
 import typing
 
-import maxvolpy
 import numpy as np
 import torch
-from implicit.als import AlternatingLeastSquares
 from scipy import sparse as sp
 from scipy.sparse.linalg import svds
 
@@ -100,6 +98,7 @@ class AlternatingLeastSquare(SparseMatrixBasedRecommenderAlgorithm):
                      f'- use_gpu: {self.use_gpu} \n')
 
     def fit(self, matrix: sp.spmatrix):
+        from implicit.als import AlternatingLeastSquares
         print('Starting Fitting')
 
         matrix = sp.csr_matrix(matrix)
@@ -167,6 +166,7 @@ class RBMF(SparseMatrixBasedRecommenderAlgorithm):
                      f'- lam: {self.lam} \n')
 
     def fit(self, matrix: sp.spmatrix):
+        import maxvolpy
         print('Starting Fitting')
         matrix = sp.csr_matrix(matrix)
         matrix = matrix.asfptype()  # casting to float
