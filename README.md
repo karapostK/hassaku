@@ -97,7 +97,7 @@ rec_loss: bpr
 eval_batch_size: 256
 device: cuda
 running_settings:
-  n_workers: 4
+  train_n_workers: 4
   batch_verbose: True
 ```
 
@@ -122,7 +122,7 @@ bprmf_ml1m_param = {
     'max_patience': 5,
     'running_settings':
         {
-            'n_workers': 4
+            'train_n_workers': 4
         },
     'train_neg_strategy': 'uniform',
     'rec_loss': 'bpr',
