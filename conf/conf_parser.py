@@ -61,7 +61,8 @@ def parse_conf(conf: dict, alg: AlgorithmsEnum, dataset: DatasetsEnum) -> dict:
     conf['time_run'] = generate_id()
     conf['dataset'] = dataset.name
     conf['data_path'] = conf['data_path']
-    conf['dataset_path'] = os.path.join(conf['data_path'], conf['dataset'], 'processed_dataset')
+    if 'dataset_path' not in conf:
+        conf['dataset_path'] = os.path.join(conf['data_path'], conf['dataset'], 'processed_dataset')
 
     # Whether we are running hyperparameter optimization
     use_tune = '_in_tune' in conf and conf['_in_tune']

@@ -44,6 +44,7 @@ class DatasetsEnum(enum.Enum):
     lfm2b2020 = enum.auto()
     deliveryherosg = enum.auto()
     lfm2bdemobias = enum.auto()
+    deezer = enum.auto()
 
 
 def print_and_log(log_file, n_lhs, n_users, n_items, text):
@@ -221,7 +222,10 @@ def create_index(lhs: pd.DataFrame):
         item_idxs: Pandas Dataframe containing the item to item_idx mapping
     """
     # Defining a unique order for the index assignment
-    lhs = lhs.sort_values(['timestamp', 'user', 'item'])
+    if 'timestamp' in lhs.columns:
+        lhs = lhs.sort_values(['timestamp', 'user', 'item'])
+    else:
+        lhs = lhs.sort_values(['user', 'item'])
 
     # Creating simple integer indexes used for sparse matrices
     user_idxs = lhs.user.drop_duplicates().reset_index(drop=True)
